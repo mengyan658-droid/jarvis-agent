@@ -11,14 +11,27 @@ type Config struct {
 	AgentTimeout      time.Duration
 	AgentMaxSteps     int
 	AgentMaxToolCalls int
+	LLMProvider       string
+	LLMAPIBaseURL     string
+	LLMAPIKey         string
+	LLMModel          string
 }
 
 func Load() Config {
+	llmProvider := getenv("LLM_PROVIDER", "mock")
+	defaultAgentTimeout := 5 * time.Second
+	if llmProvider != "mock" {
+		defaultAgentTimeout = 30 * time.Second
+	}
 	return Config{
 		AppPort:           getenv("APP_PORT", "8080"),
-		AgentTimeout:      durationEnv("AGENT_TIMEOUT", 5*time.Second),
+		AgentTimeout:      durationEnv("AGENT_TIMEOUT", defaultAgentTimeout),
 		AgentMaxSteps:     intEnv("AGENT_MAX_STEPS", 10),
 		AgentMaxToolCalls: intEnv("AGENT_MAX_TOOL_CALLS", 20),
+		LLMProvider:       llmProvider,
+		LLMAPIBaseURL:     getenv("LLM_API_BASE_URL", ""),
+		LLMAPIKey:         getenv("LLM_API_KEY", ""),
+		LLMModel:          getenv("LLM_MODEL", ""),
 	}
 }
 

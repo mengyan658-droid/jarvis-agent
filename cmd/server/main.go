@@ -13,7 +13,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg := config.Load()
-	runtime := service.NewRuntime(cfg)
+	runtime := service.NewRuntime(cfg, logger)
 	router := api.NewRouter(runtime, logger, api.Timeout(cfg.AgentTimeout))
 
 	addr := ":" + cfg.AppPort

@@ -18,7 +18,7 @@ func TestAgentQueryResponseEnvelope(t *testing.T) {
 		AgentTimeout:      5 * time.Second,
 		AgentMaxSteps:     10,
 		AgentMaxToolCalls: 20,
-	})
+	}, slog.Default())
 	router := NewRouter(runtime, slog.Default(), Timeout(5*time.Second))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent/query", bytes.NewBufferString(`{"message":"查询华东生产环境最近一小时的故障机"}`))
@@ -41,7 +41,7 @@ func TestAgentQueryResponseEnvelope(t *testing.T) {
 }
 
 func TestAgentQueryValidationErrorEnvelope(t *testing.T) {
-	runtime := service.NewRuntime(config.Config{AgentTimeout: 5 * time.Second})
+	runtime := service.NewRuntime(config.Config{AgentTimeout: 5 * time.Second}, slog.Default())
 	router := NewRouter(runtime, slog.Default(), Timeout(5*time.Second))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent/query", bytes.NewBufferString(`{"message":""}`))

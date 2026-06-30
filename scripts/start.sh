@@ -4,11 +4,32 @@ set -eu
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT_DIR/scripts/lib.sh"
 
+ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
 RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/.runtime}"
 PID_FILE="${PID_FILE:-$RUNTIME_DIR/jarvis-agent.pid}"
 LOG_FILE="${LOG_FILE:-$RUNTIME_DIR/jarvis-agent.log}"
 BIN_FILE="${BIN_FILE:-$RUNTIME_DIR/jarvis-agent}"
 APP_PORT="${APP_PORT:-8080}"
+AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-10}"
+AGENT_MAX_TOOL_CALLS="${AGENT_MAX_TOOL_CALLS:-20}"
+LLM_PROVIDER="${LLM_PROVIDER:-mock}"
+LLM_API_BASE_URL="${LLM_API_BASE_URL:-}"
+LLM_API_KEY="${LLM_API_KEY:-}"
+LLM_MODEL="${LLM_MODEL:-}"
+if [ -z "${AGENT_TIMEOUT:-}" ]; then
+  if [ "$LLM_PROVIDER" = "mock" ]; then
+    AGENT_TIMEOUT="5s"
+  else
+    AGENT_TIMEOUT="30s"
+  fi
+fi
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -29,13 +50,19 @@ if [ -n "$listen_pid" ]; then
 fi
 
 echo "starting jarvis-agent on port $APP_PORT"
+echo "llm config: provider=$LLM_PROVIDER model=${LLM_MODEL:-<default>} base_url=${LLM_API_BASE_URL:-<default>}"
+echo "agent timeout: $AGENT_TIMEOUT"
 (
   cd "$ROOT_DIR"
   go build -o "$BIN_FILE" ./cmd/server
   APP_PORT="$APP_PORT" \
-  AGENT_TIMEOUT="${AGENT_TIMEOUT:-5s}" \
-  AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-10}" \
-  AGENT_MAX_TOOL_CALLS="${AGENT_MAX_TOOL_CALLS:-20}" \
+  AGENT_TIMEOUT="$AGENT_TIMEOUT" \
+  AGENT_MAX_STEPS="$AGENT_MAX_STEPS" \
+  AGENT_MAX_TOOL_CALLS="$AGENT_MAX_TOOL_CALLS" \
+  LLM_PROVIDER="$LLM_PROVIDER" \
+  LLM_API_BASE_URL="$LLM_API_BASE_URL" \
+  LLM_API_KEY="$LLM_API_KEY" \
+  LLM_MODEL="$LLM_MODEL" \
   nohup "$BIN_FILE" >>"$LOG_FILE" 2>&1 &
   echo $! >"$PID_FILE"
 )

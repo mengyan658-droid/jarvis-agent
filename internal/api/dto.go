@@ -11,6 +11,7 @@ const (
 	CodeBadRequest       = "BAD_REQUEST"
 	CodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
 	CodeInternalError    = "INTERNAL_ERROR"
+	CodeTimeout          = "TIMEOUT"
 )
 
 type AgentQueryRequest struct {

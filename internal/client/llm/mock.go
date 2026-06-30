@@ -27,6 +27,12 @@ func (c *MockClient) ParseIntent(ctx context.Context, message string) (client.In
 	if strings.Contains(message, "故障机") || strings.Contains(message, "异常机器") {
 		name = "query_faulty_hosts"
 	}
+	if strings.Contains(message, "排查") || strings.Contains(message, "根因") {
+		if id := extractHostID(message); id != "" {
+			name = "react_investigate_host"
+			params["host_id"] = id
+		}
+	}
 	if strings.Contains(message, "诊断") || strings.Contains(message, "分析") {
 		if id := extractHostID(message); id != "" {
 			name = "diagnose_host"

@@ -1,6 +1,9 @@
 package service
 
 import (
+	"log/slog"
+	"strings"
+
 	"jarvis-agent/internal/agent"
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/client/change"
@@ -14,13 +17,13 @@ import (
 	"jarvis-agent/internal/workflow"
 )
 
-func NewRuntime(cfg config.Config) *agent.Runtime {
+func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 	store := client.NewMockStore()
 	jarvisClient := jarvis.NewMockClient(store)
 	monitorClient := monitor.NewMockClient(store)
 	changeClient := change.NewMockClient(store)
 	cmdbClient := cmdb.NewMockClient(store)
-	llmClient := llm.NewMockClient()
+	llmClient := newLLMClient(cfg, logger)
 
 	tools := tool.NewRegistry(
 		tool.QueryHostsTool{Client: jarvisClient},
@@ -33,6 +36,7 @@ func NewRuntime(cfg config.Config) *agent.Runtime {
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},
 		workflow.DiagnoseHostWorkflow{},
+		workflow.ReactInvestigateHostWorkflow{},
 	)
 	return &agent.Runtime{
 		LLM:          llmClient,
@@ -42,5 +46,36 @@ func NewRuntime(cfg config.Config) *agent.Runtime {
 		Timeout:      cfg.AgentTimeout,
 		MaxSteps:     cfg.AgentMaxSteps,
 		MaxToolCalls: cfg.AgentMaxToolCalls,
+	}
+}
+
+func newLLMClient(cfg config.Config, logger *slog.Logger) client.LLMClient {
+	provider := strings.ToLower(cfg.LLMProvider)
+	switch provider {
+	case "openai", "openai-compatible", "api":
+		baseURL := cfg.LLMAPIBaseURL
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		model := cfg.LLMModel
+		if model == "" {
+			model = "gpt-4o-mini"
+		}
+		logger.Info("configured llm client", "provider", provider, "model", model, "base_url", baseURL)
+		return llm.NewOpenAICompatibleClient(baseURL, cfg.LLMAPIKey, model).WithLogger(logger)
+	case "glm", "zhipu", "bigmodel":
+		baseURL := cfg.LLMAPIBaseURL
+		if baseURL == "" {
+			baseURL = "https://open.bigmodel.cn/api/paas/v4"
+		}
+		model := cfg.LLMModel
+		if model == "" {
+			model = "glm-5.1"
+		}
+		logger.Info("configured llm client", "provider", provider, "model", model, "base_url", baseURL)
+		return llm.NewOpenAICompatibleClient(baseURL, cfg.LLMAPIKey, model).WithLogger(logger)
+	default:
+		logger.Info("configured llm client", "provider", "mock")
+		return llm.NewMockClient()
 	}
 }

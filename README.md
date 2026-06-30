@@ -28,9 +28,71 @@
 通过环境变量读取：
 
 - `APP_PORT`：默认 `8080`
-- `AGENT_TIMEOUT`：默认 `5s`
+- `AGENT_TIMEOUT`：`LLM_PROVIDER=mock` 时默认 `5s`，真实 LLM provider 默认 `30s`
 - `AGENT_MAX_STEPS`：默认 `10`
 - `AGENT_MAX_TOOL_CALLS`：默认 `20`
+- `LLM_PROVIDER`：默认 `mock`，可设置为 `glm` 或 `openai-compatible`
+- `LLM_API_BASE_URL`：真实模型 API Base URL
+- `LLM_API_KEY`：真实模型 API Key
+- `LLM_MODEL`：模型名
+
+使用智谱 GLM API：
+
+```bash
+export LLM_PROVIDER=glm
+export LLM_API_KEY=your-glm-api-key
+export LLM_MODEL=glm-5.1
+export AGENT_TIMEOUT=30s
+go run ./cmd/server
+```
+
+使用脚本启动时，也可以在项目根目录创建 `.env`：
+
+```bash
+cp .env.example .env
+```
+
+然后编辑 `.env`：
+
+```bash
+LLM_PROVIDER=glm
+LLM_API_KEY=your-glm-api-key
+LLM_MODEL=glm-5.1
+AGENT_TIMEOUT=30s
+```
+
+再执行：
+
+```bash
+make restart
+```
+
+启动脚本会打印当前使用的 provider/model，服务日志也会记录最终配置。
+
+`LLM_PROVIDER=glm` 时，如果不显式设置 `LLM_API_BASE_URL`，默认使用：
+
+```text
+https://open.bigmodel.cn/api/paas/v4
+```
+
+使用其他 OpenAI-compatible API：
+
+```bash
+export LLM_PROVIDER=openai-compatible
+export LLM_API_BASE_URL=https://api.openai.com/v1
+export LLM_API_KEY=your-api-key
+export LLM_MODEL=gpt-4o-mini
+export AGENT_TIMEOUT=30s
+go run ./cmd/server
+```
+
+如果你提供的是兼容 OpenAI Chat Completions 的私有网关，只需要替换：
+
+```bash
+export LLM_API_BASE_URL=https://your-llm-gateway.example.com/v1
+export LLM_API_KEY=your-api-key
+export LLM_MODEL=your-model-name
+```
 
 ## 运行
 
@@ -141,3 +203,16 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -H 'X-Session-ID: s-001' \
   -d '{"message":"诊断 host-001"}'
 ```
+
+ReAct 风格排查单台机器：
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/agent/query \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-ID: u-001' \
+  -H 'X-User-Role: sre' \
+  -H 'X-Session-ID: s-001' \
+  -d '{"message":"排查 host-001 的根因"}'
+```
+
+这条请求会路由到 `react_investigate_host`，响应的 `results.react_trace` 会展示受控 ReAct 的 thought/action/observation 过程；原来的 `诊断 host-001` 仍然走固定 Workflow。

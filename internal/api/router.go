@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -57,6 +59,10 @@ func (h *Handler) query(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.Runtime.Query(r.Context(), RequestIDFromContext(r.Context()), req.Message)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			writeError(w, r, http.StatusGatewayTimeout, CodeTimeout, "request timeout")
+			return
+		}
 		writeError(w, r, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}

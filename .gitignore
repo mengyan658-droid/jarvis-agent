@@ -1,0 +1,13 @@
+.runtime/
+*.log
+
+# Go build/test outputs
+bin/
+dist/
+*.test
+coverage.out
+
+# Local editor/OS files
+.DS_Store
+.idea/
+.vscode/

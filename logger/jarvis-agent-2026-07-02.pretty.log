@@ -1,0 +1,1087 @@
+{
+  "time": "2026-07-02T00:27:50.766114+08:00",
+  "level": "INFO",
+  "msg": "configured llm client",
+  "provider": "glm",
+  "model": "glm-5.1",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4"
+}
+
+{
+  "time": "2026-07-02T00:27:50.766574+08:00",
+  "level": "INFO",
+  "msg": "starting jarvis-agent",
+  "addr": ":8080"
+}
+
+{
+  "time": "2026-07-02T00:28:01.970215+08:00",
+  "level": "INFO",
+  "msg": "calling llm model",
+  "operation": "parse_intent",
+  "model": "glm-5.1",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+  "temperature": 0,
+  "messages": 2,
+  "tools": 0
+}
+
+{
+  "time": "2026-07-02T00:28:01.970273+08:00",
+  "level": "INFO",
+  "msg": "llm request body",
+  "operation": "parse_intent",
+  "body": {
+    "model": "glm-5.1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是 Jarvis Agent 的意图解析器，只能输出 JSON，不要输出 Markdown。\n输出格式：\n{\"name\":\"query_faulty_hosts|diagnose_host|react_investigate_host|unknown\",\"parameters\":{\"region\":\"\",\"environment\":\"\",\"since\":\"\",\"host_id\":\"\"}}\n\n规则：\n- “故障机”“异常机器” => query_faulty_hosts\n- “诊断 host-001”“分析 host-001” => diagnose_host\n- “排查 host-001”“根因 host-001” => react_investigate_host\n- “华东” => region=east-china\n- “华北” => region=north-china\n- “华南” => region=south-china\n- “生产” => environment=production\n- “预发”“测试” => environment=staging\n- “最近一小时” => since=1h\n- 提取 host-001 这类 Host ID 到 host_id\n- 无法识别时 name=unknown"
+      },
+      {
+        "role": "user",
+        "content": "排查 host-001 的根因"
+      }
+    ],
+    "stream": false,
+    "temperature": 0
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:05.315279+08:00",
+  "level": "INFO",
+  "msg": "llm response body",
+  "operation": "parse_intent",
+  "status": 200,
+  "body": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": {
+            "name": "react_investigate_host",
+            "parameters": {
+              "host_id": "host-001"
+            }
+          },
+          "reasoning_content": "1. 分析输入：\"排查 host-001 的根因\"\n2. 匹配规则：\n   - \"排查\" 和 \"根因\" 都指向 `react_investigate_host`。\n   - \"host-001\" 提取为 `host_id`。\n3. 构造输出：\n   - name: \"react_investigate_host\"\n   - parameters: {\"host_id\": \"host-001\"}\n4. 格式要求：只能输出 JSON，不要输出 Markdown。",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1782923285,
+    "id": "20260702002802ce38dfce87cb4abd",
+    "model": "glm-5.1",
+    "object": "chat.completion",
+    "request_id": "20260702002802ce38dfce87cb4abd",
+    "usage": {
+      "completion_tokens": 121,
+      "completion_tokens_details": {
+        "reasoning_tokens": 101
+      },
+      "prompt_tokens": 205,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 326
+    }
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:05.315788+08:00",
+  "level": "INFO",
+  "msg": "calling llm model",
+  "operation": "function_calling",
+  "model": "glm-5.1",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+  "temperature": 0,
+  "messages": 2,
+  "tools": 6
+}
+
+{
+  "time": "2026-07-02T00:28:05.315834+08:00",
+  "level": "INFO",
+  "msg": "llm request body",
+  "operation": "function_calling",
+  "body": {
+    "model": "glm-5.1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。"
+      },
+      {
+        "role": "user",
+        "content": "请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_host",
+          "description": "查询单台主机基础信息、可达性和健康检查状态",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_metrics",
+          "description": "查询单台主机 CPU、内存和持续高负载指标",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_alarms",
+          "description": "查询单台主机当前活跃告警",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_changes",
+          "description": "查询单台主机最近一小时变更",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_cmdb",
+          "description": "查询单台主机 CMDB 元数据",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "assess_fault",
+          "description": "基于已收集证据执行确定性故障评分",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "stream": false,
+    "temperature": 0
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:12.182171+08:00",
+  "level": "INFO",
+  "msg": "llm response body",
+  "operation": "function_calling",
+  "status": 200,
+  "body": {
+    "choices": [
+      {
+        "finish_reason": "tool_calls",
+        "index": 0,
+        "message": {
+          "content": "我将并行调用所有证据收集工具，对 host-001 进行全面排查。",
+          "reasoning_content": "The user wants me to investigate host-001 for root cause analysis. I need to first collect evidence by calling multiple tools, then use assess_fault for scoring. Let me start by calling all the evidence-gathering tools in parallel since they are independent.",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "get_host"
+              },
+              "id": "call_-7480371057124177738",
+              "index": 0,
+              "type": "function"
+            },
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "query_metrics"
+              },
+              "id": "call_-7480371057124177737",
+              "index": 1,
+              "type": "function"
+            },
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "query_alarms"
+              },
+              "id": "call_-7480371057124177736",
+              "index": 2,
+              "type": "function"
+            },
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "query_changes"
+              },
+              "id": "call_-7480371057124177735",
+              "index": 3,
+              "type": "function"
+            },
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "query_cmdb"
+              },
+              "id": "call_-7480371057124177734",
+              "index": 4,
+              "type": "function"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1782923292,
+    "id": "202607020028055a4e0e725fc54069",
+    "model": "glm-5.1",
+    "object": "chat.completion",
+    "request_id": "202607020028055a4e0e725fc54069",
+    "usage": {
+      "completion_tokens": 136,
+      "completion_tokens_details": {
+        "reasoning_tokens": 50
+      },
+      "prompt_tokens": 605,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 741
+    }
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:12.182748+08:00",
+  "level": "INFO",
+  "msg": "calling llm model",
+  "operation": "function_calling",
+  "model": "glm-5.1",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+  "temperature": 0,
+  "messages": 8,
+  "tools": 6
+}
+
+{
+  "time": "2026-07-02T00:28:12.182788+08:00",
+  "level": "INFO",
+  "msg": "llm request body",
+  "operation": "function_calling",
+  "body": {
+    "model": "glm-5.1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。"
+      },
+      {
+        "role": "user",
+        "content": "请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。"
+      },
+      {
+        "role": "assistant",
+        "content": "我将并行调用所有证据收集工具，对 host-001 进行全面排查。",
+        "tool_calls": [
+          {
+            "id": "call_-7480371057124177738",
+            "type": "function",
+            "function": {
+              "name": "get_host",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177737",
+            "type": "function",
+            "function": {
+              "name": "query_metrics",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177736",
+            "type": "function",
+            "function": {
+              "name": "query_alarms",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177735",
+            "type": "function",
+            "function": {
+              "name": "query_changes",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177734",
+            "type": "function",
+            "function": {
+              "name": "query_cmdb",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": {
+          "id": "host-001",
+          "name": "pay-api-01",
+          "region": "east-china",
+          "environment": "production",
+          "ip": "10.0.1.11",
+          "reachable": true,
+          "health_check_passed": true
+        },
+        "tool_call_id": "call_-7480371057124177738"
+      },
+      {
+        "role": "tool",
+        "content": {
+          "host_id": "host-001",
+          "cpu_usage_percent": 96,
+          "memory_usage_percent": 76,
+          "high_cpu_duration_minutes": 12,
+          "collected_at": "2026-07-02T00:27:50.76598+08:00"
+        },
+        "tool_call_id": "call_-7480371057124177737"
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "id": "alm-001",
+            "host_id": "host-001",
+            "severity": "critical",
+            "message": "CPU saturation",
+            "started_at": "2026-07-02T00:07:50.76598+08:00"
+          }
+        ],
+        "tool_call_id": "call_-7480371057124177736"
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "id": "chg-001",
+            "host_id": "host-001",
+            "type": "deploy",
+            "description": "payment service deployment",
+            "risk": "high",
+            "created_at": "2026-07-01T23:57:50.76598+08:00"
+          }
+        ],
+        "tool_call_id": "call_-7480371057124177735"
+      },
+      {
+        "role": "tool",
+        "content": {
+          "owner": "payment",
+          "service": "payment-api"
+        },
+        "tool_call_id": "call_-7480371057124177734"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_host",
+          "description": "查询单台主机基础信息、可达性和健康检查状态",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_metrics",
+          "description": "查询单台主机 CPU、内存和持续高负载指标",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_alarms",
+          "description": "查询单台主机当前活跃告警",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_changes",
+          "description": "查询单台主机最近一小时变更",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_cmdb",
+          "description": "查询单台主机 CMDB 元数据",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "assess_fault",
+          "description": "基于已收集证据执行确定性故障评分",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "stream": false,
+    "temperature": 0
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:18.108021+08:00",
+  "level": "INFO",
+  "msg": "llm response body",
+  "operation": "function_calling",
+  "status": 200,
+  "body": {
+    "choices": [
+      {
+        "finish_reason": "tool_calls",
+        "index": 0,
+        "message": {
+          "content": "证据已收集完毕，现在调用故障评分工具。",
+          "reasoning_content": "Let me analyze the collected evidence:\n\n1. **get_host**: host-001 is \"pay-api-01\", production environment, reachable, health check passed.\n2. **query_metrics**: CPU usage 96%, memory 76%, high CPU duration 12 minutes.\n3. **query_alarms**: Critical alarm - \"CPU saturation\" started at 00:07:50.\n4. **query_changes**: High-risk deployment - \"payment service deployment\" at 23:57:50 (about 30 minutes before the alarm).\n5. **query_cmdb**: Owner is \"payment\", service is \"payment-api\".\n\nNow I need to call assess_fault to get the deterministic fault score.",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": {
+                  "host_id": "host-001"
+                },
+                "name": "assess_fault"
+              },
+              "id": "call_-7480396139733180428",
+              "index": 0,
+              "type": "function"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1782923298,
+    "id": "20260702002812b4909b5b9f7141c1",
+    "model": "glm-5.1",
+    "object": "chat.completion",
+    "request_id": "20260702002812b4909b5b9f7141c1",
+    "usage": {
+      "completion_tokens": 168,
+      "completion_tokens_details": {
+        "reasoning_tokens": 141
+      },
+      "prompt_tokens": 912,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 1080
+    }
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:18.108475+08:00",
+  "level": "INFO",
+  "msg": "calling llm model",
+  "operation": "function_calling",
+  "model": "glm-5.1",
+  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+  "temperature": 0,
+  "messages": 10,
+  "tools": 6
+}
+
+{
+  "time": "2026-07-02T00:28:18.108519+08:00",
+  "level": "INFO",
+  "msg": "llm request body",
+  "operation": "function_calling",
+  "body": {
+    "model": "glm-5.1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。"
+      },
+      {
+        "role": "user",
+        "content": "请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。"
+      },
+      {
+        "role": "assistant",
+        "content": "我将并行调用所有证据收集工具，对 host-001 进行全面排查。",
+        "tool_calls": [
+          {
+            "id": "call_-7480371057124177738",
+            "type": "function",
+            "function": {
+              "name": "get_host",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177737",
+            "type": "function",
+            "function": {
+              "name": "query_metrics",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177736",
+            "type": "function",
+            "function": {
+              "name": "query_alarms",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177735",
+            "type": "function",
+            "function": {
+              "name": "query_changes",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          },
+          {
+            "id": "call_-7480371057124177734",
+            "type": "function",
+            "function": {
+              "name": "query_cmdb",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": {
+          "id": "host-001",
+          "name": "pay-api-01",
+          "region": "east-china",
+          "environment": "production",
+          "ip": "10.0.1.11",
+          "reachable": true,
+          "health_check_passed": true
+        },
+        "tool_call_id": "call_-7480371057124177738"
+      },
+      {
+        "role": "tool",
+        "content": {
+          "host_id": "host-001",
+          "cpu_usage_percent": 96,
+          "memory_usage_percent": 76,
+          "high_cpu_duration_minutes": 12,
+          "collected_at": "2026-07-02T00:27:50.76598+08:00"
+        },
+        "tool_call_id": "call_-7480371057124177737"
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "id": "alm-001",
+            "host_id": "host-001",
+            "severity": "critical",
+            "message": "CPU saturation",
+            "started_at": "2026-07-02T00:07:50.76598+08:00"
+          }
+        ],
+        "tool_call_id": "call_-7480371057124177736"
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "id": "chg-001",
+            "host_id": "host-001",
+            "type": "deploy",
+            "description": "payment service deployment",
+            "risk": "high",
+            "created_at": "2026-07-01T23:57:50.76598+08:00"
+          }
+        ],
+        "tool_call_id": "call_-7480371057124177735"
+      },
+      {
+        "role": "tool",
+        "content": {
+          "owner": "payment",
+          "service": "payment-api"
+        },
+        "tool_call_id": "call_-7480371057124177734"
+      },
+      {
+        "role": "assistant",
+        "content": "证据已收集完毕，现在调用故障评分工具。",
+        "tool_calls": [
+          {
+            "id": "call_-7480396139733180428",
+            "type": "function",
+            "function": {
+              "name": "assess_fault",
+              "arguments": {
+                "host_id": "host-001"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": {
+          "host_id": "host-001",
+          "score": 50,
+          "level": "degraded",
+          "is_faulty": true,
+          "reasons": [
+            "critical_alarms",
+            "cpu_usage_critical",
+            "cpu_high_load_sustained",
+            "recent_changes"
+          ],
+          "evidence": {
+            "host": {
+              "id": "host-001",
+              "name": "pay-api-01",
+              "region": "east-china",
+              "environment": "production",
+              "ip": "10.0.1.11",
+              "reachable": true,
+              "health_check_passed": true
+            },
+            "metrics": {
+              "host_id": "host-001",
+              "cpu_usage_percent": 96,
+              "memory_usage_percent": 76,
+              "high_cpu_duration_minutes": 12,
+              "collected_at": "2026-07-02T00:27:50.76598+08:00"
+            },
+            "alarms": [
+              {
+                "id": "alm-001",
+                "host_id": "host-001",
+                "severity": "critical",
+                "message": "CPU saturation",
+                "started_at": "2026-07-02T00:07:50.76598+08:00"
+              }
+            ],
+            "recent_changes": [
+              {
+                "id": "chg-001",
+                "host_id": "host-001",
+                "type": "deploy",
+                "description": "payment service deployment",
+                "risk": "high",
+                "created_at": "2026-07-01T23:57:50.76598+08:00"
+              }
+            ],
+            "cmdb": {
+              "owner": "payment",
+              "service": "payment-api"
+            }
+          }
+        },
+        "tool_call_id": "call_-7480396139733180428"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_host",
+          "description": "查询单台主机基础信息、可达性和健康检查状态",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_metrics",
+          "description": "查询单台主机 CPU、内存和持续高负载指标",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_alarms",
+          "description": "查询单台主机当前活跃告警",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_changes",
+          "description": "查询单台主机最近一小时变更",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "query_cmdb",
+          "description": "查询单台主机 CMDB 元数据",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "assess_fault",
+          "description": "基于已收集证据执行确定性故障评分",
+          "parameters": {
+            "properties": {
+              "host_id": {
+                "description": "Host ID, for example host-001",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host_id"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "stream": false,
+    "temperature": 0
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:26.323892+08:00",
+  "level": "INFO",
+  "msg": "llm response body",
+  "operation": "function_calling",
+  "status": 200,
+  "body": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "## host-001 排查结论\n\n| 项目 | 结果 |\n|------|------|\n| **故障等级** | 🟡 降级— 评分 50 |\n| **主机** | pay-api-01（生产环境，支付 API 服务） |\n| **可达性** | 网络可达、健康检查通过 |\n\n### 关键证据\n1. **CPU 持续饱和**：CPU 使用率 96%，已持续高负载 12 分钟\n2. **活跃告警**：1 条 Critical 告警——\"CPU saturation\"，始于 00:07\n3. **近期变更**：30 分钟前（23:57）执行了一次 **payment service deployment**，风险等级为 **high**\n\n### 可能根因\n**支付服务部署（payment service deployment）引发 CPU 饱和**。时间线高度吻合：部署发生在 23:57，CPU 告警在 00:07 触发，此后 CPU 持续高负载。建议回滚该部署或排查新版本代码中的 CPU 热点（如死循环、高并发锁竞争等）。",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1782923306,
+    "id": "202607020028182ac932070a3a49ec",
+    "model": "glm-5.1",
+    "object": "chat.completion",
+    "request_id": "202607020028182ac932070a3a49ec",
+    "usage": {
+      "completion_tokens": 242,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "prompt_tokens": 1207,
+      "prompt_tokens_details": {
+        "cached_tokens": 896
+      },
+      "total_tokens": 1449
+    }
+  }
+}
+
+{
+  "time": "2026-07-02T00:28:26.324424+08:00",
+  "level": "INFO",
+  "msg": "http request",
+  "method": "POST",
+  "path": "/api/v1/agent/query",
+  "request_id": "req-djndk0flpss0-8445",
+  "duration_ms": 24354
+}
+
+# line 16: non-json log
+time=2026-07-02T00:31:56.385+08:00 level=INFO msg="configured llm client" provider=glm model=glm-5.1 base_url=https://open.bigmodel.cn/api/paas/v4
+
+# line 17: non-json log
+time=2026-07-02T00:31:56.386+08:00 level=INFO msg="starting jarvis-agent" addr=:8080
+
+# line 18: non-json log
+time=2026-07-02T00:31:58.821+08:00 level=INFO msg="calling llm model" operation=parse_intent model=glm-5.1 base_url=https://open.bigmodel.cn/api/paas/v4 url=https://open.bigmodel.cn/api/paas/v4/chat/completions temperature=0 messages=2 tools=0
+
+# line 19: non-json log
+time=2026-07-02T00:31:58.821+08:00 level=INFO msg="llm request body" operation=parse_intent body="{\"model\":\"glm-5.1\",\"messages\":[{\"role\":\"system\",\"content\":\"你是 Jarvis Agent 的意图解析器，只能输出 JSON，不要输出 Markdown。\\n输出格式：\\n{\\\"name\\\":\\\"query_faulty_hosts|diagnose_host|react_investigate_host|unknown\\\",\\\"parameters\\\":{\\\"region\\\":\\\"\\\",\\\"environment\\\":\\\"\\\",\\\"since\\\":\\\"\\\",\\\"host_id\\\":\\\"\\\"}}\\n\\n规则：\\n- “故障机”“异常机器” =\\u003e query_faulty_hosts\\n- “诊断 host-001”“分析 host-001” =\\u003e diagnose_host\\n- “排查 host-001”“根因 host-001” =\\u003e react_investigate_host\\n- “华东” =\\u003e region=east-china\\n- “华北” =\\u003e region=north-china\\n- “华南” =\\u003e region=south-china\\n- “生产” =\\u003e environment=production\\n- “预发”“测试” =\\u003e environment=staging\\n- “最近一小时” =\\u003e since=1h\\n- 提取 host-001 这类 Host ID 到 host_id\\n- 无法识别时 name=unknown\"},{\"role\":\"user\",\"content\":\"排查 host-001 的根因\"}],\"stream\":false,\"temperature\":0}"
+
+# line 20: non-json log
+time=2026-07-02T00:32:01.605+08:00 level=INFO msg="llm response body" operation=parse_intent status=200 body="{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"{\\\"name\\\":\\\"react_investigate_host\\\",\\\"parameters\\\":{\\\"host_id\\\":\\\"host-001\\\"}}\",\"reasoning_content\":\"1. 分析输入：\\\"排查 host-001 的根因\\\"\\n2. 匹配规则：\\n   - \\\"排查\\\" 和 \\\"根因\\\" 都指向 `react_investigate_host`。\\n   - \\\"host-001\\\" 提取为 `host_id`。\\n3. 构造输出：\\n   - name: \\\"react_investigate_host\\\"\\n   - parameters: {\\\"host_id\\\": \\\"host-001\\\"}\\n4. 格式要求：纯JSON，无Markdown。\",\"role\":\"assistant\"}}],\"created\":1782923521,\"id\":\"20260702003159a033c31244aa48b1\",\"model\":\"glm-5.1\",\"object\":\"chat.completion\",\"request_id\":\"20260702003159a033c31244aa48b1\",\"usage\":{\"completion_tokens\":119,\"completion_tokens_details\":{\"reasoning_tokens\":99},\"prompt_tokens\":205,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":324}}"
+
+# line 21: non-json log
+time=2026-07-02T00:32:01.605+08:00 level=INFO msg="calling llm model" operation=function_calling model=glm-5.1 base_url=https://open.bigmodel.cn/api/paas/v4 url=https://open.bigmodel.cn/api/paas/v4/chat/completions temperature=0 messages=2 tools=6
+
+# line 22: non-json log
+time=2026-07-02T00:32:01.605+08:00 level=INFO msg="llm request body" operation=function_calling body="{\"model\":\"glm-5.1\",\"messages\":[{\"role\":\"system\",\"content\":\"你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。\"},{\"role\":\"user\",\"content\":\"请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_host\",\"description\":\"查询单台主机基础信息、可达性和健康检查状态\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_metrics\",\"description\":\"查询单台主机 CPU、内存和持续高负载指标\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_alarms\",\"description\":\"查询单台主机当前活跃告警\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_changes\",\"description\":\"查询单台主机最近一小时变更\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_cmdb\",\"description\":\"查询单台主机 CMDB 元数据\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"assess_fault\",\"description\":\"基于已收集证据执行确定性故障评分\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}}],\"tool_choice\":\"auto\",\"stream\":false,\"temperature\":0}"
+
+# line 23: non-json log
+time=2026-07-02T00:32:07.419+08:00 level=INFO msg="llm response body" operation=function_calling status=200 body="{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"我将先并行调用所有证据收集工具，然后进行故障评分。\",\"reasoning_content\":\"The user wants me to investigate host-001 for root cause. I need to first collect evidence by calling get_host, query_metrics, query_alarms, query_changes, and query_cmdb, then call assess_fault for the final scoring. Let me make all the independent calls first.\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"get_host\"},\"id\":\"call_-7480358962496267453\",\"index\":0,\"type\":\"function\"},{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"query_metrics\"},\"id\":\"call_-7480358962496267452\",\"index\":1,\"type\":\"function\"},{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"query_alarms\"},\"id\":\"call_-7480358962496267451\",\"index\":2,\"type\":\"function\"},{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"query_changes\"},\"id\":\"call_-7480358962496267450\",\"index\":3,\"type\":\"function\"},{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"query_cmdb\"},\"id\":\"call_-7480358962496267449\",\"index\":4,\"type\":\"function\"}]}}],\"created\":1782923527,\"id\":\"202607020032015ef6b2ac6ca74380\",\"model\":\"glm-5.1\",\"object\":\"chat.completion\",\"request_id\":\"202607020032015ef6b2ac6ca74380\",\"usage\":{\"completion_tokens\":142,\"completion_tokens_details\":{\"reasoning_tokens\":58},\"prompt_tokens\":605,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":747}}"
+
+# line 24: non-json log
+time=2026-07-02T00:32:07.419+08:00 level=INFO msg="calling llm model" operation=function_calling model=glm-5.1 base_url=https://open.bigmodel.cn/api/paas/v4 url=https://open.bigmodel.cn/api/paas/v4/chat/completions temperature=0 messages=8 tools=6
+
+# line 25: non-json log
+time=2026-07-02T00:32:07.419+08:00 level=INFO msg="llm request body" operation=function_calling body="{\"model\":\"glm-5.1\",\"messages\":[{\"role\":\"system\",\"content\":\"你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。\"},{\"role\":\"user\",\"content\":\"请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。\"},{\"role\":\"assistant\",\"content\":\"我将先并行调用所有证据收集工具，然后进行故障评分。\",\"tool_calls\":[{\"id\":\"call_-7480358962496267453\",\"type\":\"function\",\"function\":{\"name\":\"get_host\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267452\",\"type\":\"function\",\"function\":{\"name\":\"query_metrics\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267451\",\"type\":\"function\",\"function\":{\"name\":\"query_alarms\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267450\",\"type\":\"function\",\"function\":{\"name\":\"query_changes\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267449\",\"type\":\"function\",\"function\":{\"name\":\"query_cmdb\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"{\\\"id\\\":\\\"host-001\\\",\\\"name\\\":\\\"pay-api-01\\\",\\\"region\\\":\\\"east-china\\\",\\\"environment\\\":\\\"production\\\",\\\"ip\\\":\\\"10.0.1.11\\\",\\\"reachable\\\":true,\\\"health_check_passed\\\":true}\",\"tool_call_id\":\"call_-7480358962496267453\"},{\"role\":\"tool\",\"content\":\"{\\\"host_id\\\":\\\"host-001\\\",\\\"cpu_usage_percent\\\":96,\\\"memory_usage_percent\\\":76,\\\"high_cpu_duration_minutes\\\":12,\\\"collected_at\\\":\\\"2026-07-02T00:31:56.385641+08:00\\\"}\",\"tool_call_id\":\"call_-7480358962496267452\"},{\"role\":\"tool\",\"content\":\"[{\\\"id\\\":\\\"alm-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"severity\\\":\\\"critical\\\",\\\"message\\\":\\\"CPU saturation\\\",\\\"started_at\\\":\\\"2026-07-02T00:11:56.385641+08:00\\\"}]\",\"tool_call_id\":\"call_-7480358962496267451\"},{\"role\":\"tool\",\"content\":\"[{\\\"id\\\":\\\"chg-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"type\\\":\\\"deploy\\\",\\\"description\\\":\\\"payment service deployment\\\",\\\"risk\\\":\\\"high\\\",\\\"created_at\\\":\\\"2026-07-02T00:01:56.385641+08:00\\\"}]\",\"tool_call_id\":\"call_-7480358962496267450\"},{\"role\":\"tool\",\"content\":\"{\\\"owner\\\":\\\"payment\\\",\\\"service\\\":\\\"payment-api\\\"}\",\"tool_call_id\":\"call_-7480358962496267449\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_host\",\"description\":\"查询单台主机基础信息、可达性和健康检查状态\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_metrics\",\"description\":\"查询单台主机 CPU、内存和持续高负载指标\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_alarms\",\"description\":\"查询单台主机当前活跃告警\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_changes\",\"description\":\"查询单台主机最近一小时变更\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_cmdb\",\"description\":\"查询单台主机 CMDB 元数据\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"assess_fault\",\"description\":\"基于已收集证据执行确定性故障评分\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}}],\"tool_choice\":\"auto\",\"stream\":false,\"temperature\":0}"
+
+# line 26: non-json log
+time=2026-07-02T00:32:13.588+08:00 level=INFO msg="llm response body" operation=function_calling status=200 body="{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"证据已收集完毕，现在调用故障评分：\",\"reasoning_content\":\"Let me analyze the collected evidence:\\n\\n1. **get_host**: host-001 is \\\"pay-api-01\\\", production environment, reachable, health check passed\\n2. **query_metrics**: CPU usage 96%, memory 76%, high CPU duration 12 minutes\\n3. **query_alarms**: Critical alarm - \\\"CPU saturation\\\" started at 00:11:56\\n4. **query_changes**: High-risk deployment - \\\"payment service deployment\\\" at 00:01:56\\n5. **query_cmdb**: Owner is payment, service is payment-api\\n\\nThe timeline is clear: deployment happened at 00:01, CPU saturation alarm triggered at 00:11 (10 minutes later), and CPU has been high for 12 minutes. This strongly suggests the deployment caused the CPU saturation.\\n\\nNow let me call assess_fault for the deterministic scoring.\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\",\"name\":\"assess_fault\"},\"id\":\"call_-7480370541728104193\",\"index\":0,\"type\":\"function\"}]}}],\"created\":1782923533,\"id\":\"2026070200320721f52b0dce3f4761\",\"model\":\"glm-5.1\",\"object\":\"chat.completion\",\"request_id\":\"2026070200320721f52b0dce3f4761\",\"usage\":{\"completion_tokens\":201,\"completion_tokens_details\":{\"reasoning_tokens\":175},\"prompt_tokens\":913,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":1114}}"
+
+# line 27: non-json log
+time=2026-07-02T00:32:13.588+08:00 level=INFO msg="calling llm model" operation=function_calling model=glm-5.1 base_url=https://open.bigmodel.cn/api/paas/v4 url=https://open.bigmodel.cn/api/paas/v4/chat/completions temperature=0 messages=10 tools=6
+
+# line 28: non-json log
+time=2026-07-02T00:32:13.588+08:00 level=INFO msg="llm request body" operation=function_calling body="{\"model\":\"glm-5.1\",\"messages\":[{\"role\":\"system\",\"content\":\"你是基础设施运维 Agent。你必须使用原生 function calling 调用工具，不能编造工具结果。\\n排查单台主机时，优先调用 get_host、query_metrics、query_alarms、query_changes、query_cmdb，然后调用 assess_fault 获取确定性评分。\\n最终回答要简短，说明故障等级、关键证据和可能根因。评分必须以 assess_fault 返回为准。\"},{\"role\":\"user\",\"content\":\"请用可用函数排查 host-001 的根因。必须先调用工具收集证据，最后给出简短中文结论。\"},{\"role\":\"assistant\",\"content\":\"我将先并行调用所有证据收集工具，然后进行故障评分。\",\"tool_calls\":[{\"id\":\"call_-7480358962496267453\",\"type\":\"function\",\"function\":{\"name\":\"get_host\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267452\",\"type\":\"function\",\"function\":{\"name\":\"query_metrics\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267451\",\"type\":\"function\",\"function\":{\"name\":\"query_alarms\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267450\",\"type\":\"function\",\"function\":{\"name\":\"query_changes\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}},{\"id\":\"call_-7480358962496267449\",\"type\":\"function\",\"function\":{\"name\":\"query_cmdb\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"{\\\"id\\\":\\\"host-001\\\",\\\"name\\\":\\\"pay-api-01\\\",\\\"region\\\":\\\"east-china\\\",\\\"environment\\\":\\\"production\\\",\\\"ip\\\":\\\"10.0.1.11\\\",\\\"reachable\\\":true,\\\"health_check_passed\\\":true}\",\"tool_call_id\":\"call_-7480358962496267453\"},{\"role\":\"tool\",\"content\":\"{\\\"host_id\\\":\\\"host-001\\\",\\\"cpu_usage_percent\\\":96,\\\"memory_usage_percent\\\":76,\\\"high_cpu_duration_minutes\\\":12,\\\"collected_at\\\":\\\"2026-07-02T00:31:56.385641+08:00\\\"}\",\"tool_call_id\":\"call_-7480358962496267452\"},{\"role\":\"tool\",\"content\":\"[{\\\"id\\\":\\\"alm-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"severity\\\":\\\"critical\\\",\\\"message\\\":\\\"CPU saturation\\\",\\\"started_at\\\":\\\"2026-07-02T00:11:56.385641+08:00\\\"}]\",\"tool_call_id\":\"call_-7480358962496267451\"},{\"role\":\"tool\",\"content\":\"[{\\\"id\\\":\\\"chg-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"type\\\":\\\"deploy\\\",\\\"description\\\":\\\"payment service deployment\\\",\\\"risk\\\":\\\"high\\\",\\\"created_at\\\":\\\"2026-07-02T00:01:56.385641+08:00\\\"}]\",\"tool_call_id\":\"call_-7480358962496267450\"},{\"role\":\"tool\",\"content\":\"{\\\"owner\\\":\\\"payment\\\",\\\"service\\\":\\\"payment-api\\\"}\",\"tool_call_id\":\"call_-7480358962496267449\"},{\"role\":\"assistant\",\"content\":\"证据已收集完毕，现在调用故障评分：\",\"tool_calls\":[{\"id\":\"call_-7480370541728104193\",\"type\":\"function\",\"function\":{\"name\":\"assess_fault\",\"arguments\":\"{\\\"host_id\\\":\\\"host-001\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"{\\\"host_id\\\":\\\"host-001\\\",\\\"score\\\":50,\\\"level\\\":\\\"degraded\\\",\\\"is_faulty\\\":true,\\\"reasons\\\":[\\\"critical_alarms\\\",\\\"cpu_usage_critical\\\",\\\"cpu_high_load_sustained\\\",\\\"recent_changes\\\"],\\\"evidence\\\":{\\\"host\\\":{\\\"id\\\":\\\"host-001\\\",\\\"name\\\":\\\"pay-api-01\\\",\\\"region\\\":\\\"east-china\\\",\\\"environment\\\":\\\"production\\\",\\\"ip\\\":\\\"10.0.1.11\\\",\\\"reachable\\\":true,\\\"health_check_passed\\\":true},\\\"metrics\\\":{\\\"host_id\\\":\\\"host-001\\\",\\\"cpu_usage_percent\\\":96,\\\"memory_usage_percent\\\":76,\\\"high_cpu_duration_minutes\\\":12,\\\"collected_at\\\":\\\"2026-07-02T00:31:56.385641+08:00\\\"},\\\"alarms\\\":[{\\\"id\\\":\\\"alm-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"severity\\\":\\\"critical\\\",\\\"message\\\":\\\"CPU saturation\\\",\\\"started_at\\\":\\\"2026-07-02T00:11:56.385641+08:00\\\"}],\\\"recent_changes\\\":[{\\\"id\\\":\\\"chg-001\\\",\\\"host_id\\\":\\\"host-001\\\",\\\"type\\\":\\\"deploy\\\",\\\"description\\\":\\\"payment service deployment\\\",\\\"risk\\\":\\\"high\\\",\\\"created_at\\\":\\\"2026-07-02T00:01:56.385641+08:00\\\"}],\\\"cmdb\\\":{\\\"owner\\\":\\\"payment\\\",\\\"service\\\":\\\"payment-api\\\"}}}\",\"tool_call_id\":\"call_-7480370541728104193\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_host\",\"description\":\"查询单台主机基础信息、可达性和健康检查状态\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_metrics\",\"description\":\"查询单台主机 CPU、内存和持续高负载指标\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_alarms\",\"description\":\"查询单台主机当前活跃告警\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_changes\",\"description\":\"查询单台主机最近一小时变更\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"query_cmdb\",\"description\":\"查询单台主机 CMDB 元数据\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}},{\"type\":\"function\",\"function\":{\"name\":\"assess_fault\",\"description\":\"基于已收集证据执行确定性故障评分\",\"parameters\":{\"properties\":{\"host_id\":{\"description\":\"Host ID, for example host-001\",\"type\":\"string\"}},\"required\":[\"host_id\"],\"type\":\"object\"}}}],\"tool_choice\":\"auto\",\"stream\":false,\"temperature\":0}"
+
+# line 29: non-json log
+time=2026-07-02T00:32:22.110+08:00 level=INFO msg="llm response body" operation=function_calling status=200 body="{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"## 排查结论\\n\\n| 项目 | 结果 |\\n|---|---|\\n| **故障等级** | 🟡 降级— 评分 50，确认故障 |\\n| **主机** | pay-api-01（10.0.1.11，生产环境，支付服务） |\\n| **关键证据** | ① CPU 使用率 **96%**，持续高负载 **12 分钟**；② 活跃 **Critical** 告警：CPU saturation；③ 主机可达、健康检查通过，内存尚可（76%） |\\n| **可能根因** | **近期部署变更**：00:01 执行了高风险的 payment service deployment，10 分钟后触发 CPU 饱和告警，时间线高度吻合。新版本代码可能存在 CPU 密集型逻辑或性能回归，导致持续 CPU 飙高。 |\\n\\n**建议**：回滚或排查该次支付服务部署的代码变更，确认是否存在死循环、锁竞争或计算逻辑异常。\",\"role\":\"assistant\"}}],\"created\":1782923542,\"id\":\"2026070200321375c605ba73704377\",\"model\":\"glm-5.1\",\"object\":\"chat.completion\",\"request_id\":\"2026070200321375c605ba73704377\",\"usage\":{\"completion_tokens\":214,\"completion_tokens_details\":{\"reasoning_tokens\":0},\"prompt_tokens\":1210,\"prompt_tokens_details\":{\"cached_tokens\":896},\"total_tokens\":1424}}"
+
+# line 30: non-json log
+time=2026-07-02T00:32:22.111+08:00 level=INFO msg="http request" method=POST path=/api/v1/agent/query request_id=req-djndn18p2ui0-7717 duration_ms=23290
+

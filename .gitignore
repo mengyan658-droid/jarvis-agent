@@ -1,5 +1,6 @@
 .runtime/
 .env
+logger/*.log
 *.log
 
 # Go build/test outputs

@@ -35,6 +35,7 @@
 - `LLM_API_BASE_URL`：真实模型 API Base URL
 - `LLM_API_KEY`：真实模型 API Key
 - `LLM_MODEL`：模型名
+- LLM 调用会始终记录请求体和响应体，日志不包含 Authorization header。
 
 使用智谱 GLM API：
 
@@ -133,7 +134,7 @@ make run
 脚本默认写入：
 
 - PID：`.runtime/jarvis-agent.pid`
-- 日志：`.runtime/jarvis-agent.log`
+- 日志：`logger/jarvis-agent-YYYY-MM-DD.log`
 - 二进制：`.runtime/jarvis-agent`
 
 可覆盖的环境变量：
@@ -144,11 +145,31 @@ make run
 - `AGENT_MAX_TOOL_CALLS`
 - `RUNTIME_DIR`
 - `PID_FILE`
+- `LOG_DIR`
+- `LOG_DATE`
 - `LOG_FILE`
 - `BIN_FILE`
 - `STOP_TIMEOUT_SECONDS`
 
 如果 PID 文件丢失或过期，但端口仍被旧进程占用，脚本会直接失败并打印占用端口的 PID，避免新版本启动失败后请求仍落到旧服务上。
+
+查看当天日志：
+
+```bash
+tail -f logger/jarvis-agent-$(date +%F).log
+```
+
+生成便于阅读的格式化日志：
+
+```bash
+./scripts/pretty-log.sh
+```
+
+默认输出：
+
+```text
+logger/jarvis-agent-YYYY-MM-DD.pretty.log
+```
 
 ## API
 
@@ -204,7 +225,7 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -d '{"message":"诊断 host-001"}'
 ```
 
-ReAct 风格排查单台机器：
+原生 function calling 排查单台机器：
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/agent/query \
@@ -215,4 +236,12 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -d '{"message":"排查 host-001 的根因"}'
 ```
 
-这条请求会路由到 `react_investigate_host`，响应的 `results.react_trace` 会展示受控 ReAct 的 thought/action/observation 过程；原来的 `诊断 host-001` 仍然走固定 Workflow。
+这条请求会路由到 `react_investigate_host`，但实现方式是模型原生 function calling：
+
+- 请求模型时传入 `tools`
+- 模型返回 `tool_calls`
+- 服务端执行对应 Tool
+- Tool 结果以 `role=tool` 消息回传模型
+- 模型生成最终结论
+
+响应的 `results.function_call_trace` 会展示每次函数调用和观测结果；原来的 `诊断 host-001` 仍然走固定 Workflow。

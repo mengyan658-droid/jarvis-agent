@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"jarvis-agent/internal/client"
@@ -75,6 +76,51 @@ func (c *MockClient) GenerateHostDiagnosis(ctx context.Context, assessment domai
 		return "", err
 	}
 	return fmt.Sprintf("%s 评分 %d，等级 %s，故障状态为 %t。", assessment.HostID, assessment.Score, assessment.Level, assessment.IsFaulty), nil
+}
+
+func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolChatMessage, tools []client.FunctionTool) (client.ToolChatMessage, error) {
+	if err := c.Behavior.Before(ctx); err != nil {
+		return client.ToolChatMessage{}, err
+	}
+	hostID := "host-001"
+	for _, msg := range messages {
+		if id := extractHostID(msg.Content); id != "" {
+			hostID = id
+		}
+	}
+	toolResults := 0
+	for _, msg := range messages {
+		if msg.Role == "tool" {
+			toolResults++
+		}
+	}
+	sequence := []string{
+		"get_host",
+		"query_metrics",
+		"query_alarms",
+		"query_changes",
+		"query_cmdb",
+		"assess_fault",
+	}
+	if toolResults >= len(sequence) {
+		return client.ToolChatMessage{
+			Role:    "assistant",
+			Content: "已完成原生 function calling 工具调查，请以确定性评分结果为准。",
+		}, nil
+	}
+	name := sequence[toolResults]
+	args := fmt.Sprintf(`{"host_id":%s}`, strconv.Quote(hostID))
+	return client.ToolChatMessage{
+		Role: "assistant",
+		ToolCalls: []client.ToolCall{{
+			ID:   fmt.Sprintf("call-%d", toolResults+1),
+			Type: "function",
+			Function: client.FunctionCall{
+				Name:      name,
+				Arguments: args,
+			},
+		}},
+	}, nil
 }
 
 func extractHostID(message string) string {

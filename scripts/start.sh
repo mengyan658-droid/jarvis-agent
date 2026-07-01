@@ -14,7 +14,9 @@ fi
 
 RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/.runtime}"
 PID_FILE="${PID_FILE:-$RUNTIME_DIR/jarvis-agent.pid}"
-LOG_FILE="${LOG_FILE:-$RUNTIME_DIR/jarvis-agent.log}"
+LOG_DIR="${LOG_DIR:-$ROOT_DIR/logger}"
+LOG_DATE="${LOG_DATE:-$(date +%F)}"
+LOG_FILE="${LOG_FILE:-$LOG_DIR/jarvis-agent-$LOG_DATE.log}"
 BIN_FILE="${BIN_FILE:-$RUNTIME_DIR/jarvis-agent}"
 APP_PORT="${APP_PORT:-8080}"
 AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-10}"
@@ -31,7 +33,10 @@ if [ -z "${AGENT_TIMEOUT:-}" ]; then
   fi
 fi
 
-mkdir -p "$RUNTIME_DIR"
+mkdir -p "$RUNTIME_DIR" "$LOG_DIR"
+if [ ! -f "$LOG_FILE" ]; then
+  : >"$LOG_FILE"
+fi
 
 if [ -f "$PID_FILE" ]; then
   old_pid=$(cat "$PID_FILE")

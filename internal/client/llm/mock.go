@@ -30,7 +30,7 @@ func (c *MockClient) ParseIntent(ctx context.Context, message string) (client.In
 	}
 	if strings.Contains(message, "排查") || strings.Contains(message, "根因") {
 		if id := extractHostID(message); id != "" {
-			name = "react_investigate_host"
+			name = "tool_loop_investigate_host"
 			params["host_id"] = id
 		}
 	}

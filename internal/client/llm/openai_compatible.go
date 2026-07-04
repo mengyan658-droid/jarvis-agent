@@ -197,12 +197,12 @@ func (c *OpenAICompatibleClient) chatCompletionsURL() string {
 func intentSystemPrompt() string {
 	return `你是 Jarvis Agent 的意图解析器，只能输出 JSON，不要输出 Markdown。
 输出格式：
-{"name":"query_faulty_hosts|diagnose_host|react_investigate_host|unknown","parameters":{"region":"","environment":"","since":"","host_id":""}}
+{"name":"query_faulty_hosts|diagnose_host|tool_loop_investigate_host|unknown","parameters":{"region":"","environment":"","since":"","host_id":""}}
 
 规则：
 - “故障机”“异常机器” => query_faulty_hosts
 - “诊断 host-001”“分析 host-001” => diagnose_host
-- “排查 host-001”“根因 host-001” => react_investigate_host
+- “排查 host-001”“根因 host-001” => tool_loop_investigate_host
 - “华东” => region=east-china
 - “华北” => region=north-china
 - “华南” => region=south-china

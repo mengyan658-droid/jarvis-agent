@@ -14,7 +14,7 @@ import (
 	"jarvis-agent/internal/tool"
 )
 
-func TestReactInvestigateHostWorkflow(t *testing.T) {
+func TestToolLoopInvestigateHostWorkflow(t *testing.T) {
 	store := client.NewMockStore()
 	tools := tool.NewRegistry(
 		tool.GetHostTool{Client: jarvis.NewMockClient(store)},
@@ -23,8 +23,8 @@ func TestReactInvestigateHostWorkflow(t *testing.T) {
 		tool.QueryChangesTool{Client: change.NewMockClient(store)},
 		tool.QueryCMDBTool{Client: cmdb.NewMockClient(store)},
 	)
-	result, err := ReactInvestigateHostWorkflow{}.Run(context.Background(), Context{
-		Intent:       client.Intent{Name: "react_investigate_host", Parameters: map[string]string{"host_id": "host-001"}},
+	result, err := ToolLoopInvestigateHostWorkflow{}.Run(context.Background(), Context{
+		Intent:       client.Intent{Name: "tool_loop_investigate_host", Parameters: map[string]string{"host_id": "host-001"}},
 		Tools:        tools,
 		ToolRecorder: &tool.Recorder{},
 		Analyzer:     domain.NewFaultAnalyzer(),
@@ -33,7 +33,7 @@ func TestReactInvestigateHostWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := result.Results.(ReactInvestigationResult)
+	got := result.Results.(ToolLoopInvestigationResult)
 	if len(got.Trace) == 0 {
 		t.Fatal("expected react trace")
 	}

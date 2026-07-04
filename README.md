@@ -236,7 +236,7 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -d '{"message":"排查 host-001 的根因"}'
 ```
 
-这条请求会路由到 `react_investigate_host`，但实现方式是模型原生 function calling：
+这条请求会路由到 `tool_loop_investigate_host`，实现方式是模型原生 function calling：
 
 - 请求模型时传入 `tools`
 - 模型返回 `tool_calls`
@@ -245,3 +245,5 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
 - 模型生成最终结论
 
 响应的 `results.function_call_trace` 会展示每次函数调用和观测结果；原来的 `诊断 host-001` 仍然走固定 Workflow。
+
+如果 LLM 返回了 `unknown` 或未注册的 intent name，Runtime 会兜底路由到 `tool_loop_investigate_host`。兜底时会优先复用 LLM 解析出的 `host_id`，如果没有则从用户原始消息里提取 `host-001` 这类 Host ID。

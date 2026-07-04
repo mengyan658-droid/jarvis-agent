@@ -36,7 +36,7 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},
 		workflow.DiagnoseHostWorkflow{},
-		workflow.ReactInvestigateHostWorkflow{},
+		workflow.ToolLoopInvestigateHostWorkflow{},
 	)
 	return &agent.Runtime{
 		LLM:          llmClient,

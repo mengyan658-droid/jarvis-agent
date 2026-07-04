@@ -23,17 +23,19 @@ type FunctionCallingTrace struct {
 	Error       string `json:"error,omitempty"`
 }
 
-type ReactInvestigationResult struct {
+const ToolLoopInvestigateHostWorkflowName = "tool_loop_investigate_host"
+
+type ToolLoopInvestigationResult struct {
 	Trace      []FunctionCallingTrace `json:"function_call_trace"`
 	Final      string                 `json:"final"`
 	Assessment domain.FaultAssessment `json:"assessment"`
 }
 
-type ReactInvestigateHostWorkflow struct{}
+type ToolLoopInvestigateHostWorkflow struct{}
 
-func (w ReactInvestigateHostWorkflow) Name() string { return "react_investigate_host" }
+func (w ToolLoopInvestigateHostWorkflow) Name() string { return ToolLoopInvestigateHostWorkflowName }
 
-func (w ReactInvestigateHostWorkflow) Run(ctx context.Context, wfctx Context) (Result, error) {
+func (w ToolLoopInvestigateHostWorkflow) Run(ctx context.Context, wfctx Context) (Result, error) {
 	functionLLM, ok := wfctx.LLM.(client.FunctionCallingClient)
 	if !ok {
 		return Result{}, errors.New("llm client does not support function calling")
@@ -116,7 +118,7 @@ func (w ReactInvestigateHostWorkflow) Run(ctx context.Context, wfctx Context) (R
 		Intent:   wfctx.Intent.Name,
 		Workflow: w.Name(),
 		Summary:  final,
-		Results: ReactInvestigationResult{
+		Results: ToolLoopInvestigationResult{
 			Trace:      trace,
 			Final:      final,
 			Assessment: assessment,

@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"errors"
+	"regexp"
 	"time"
 
 	"jarvis-agent/internal/client"
@@ -42,12 +42,31 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 	if err != nil {
 		return QueryResult{}, err
 	}
-	if intent.Name == "" || intent.Name == "unknown" {
-		return QueryResult{}, errors.New("unsupported intent")
+	routeName := intent.Name
+	routeWarnings := []string{}
+	if routeName == "" || routeName == "unknown" {
+		routeWarnings = append(routeWarnings, "intent is unknown; routed to tool loop workflow")
+		routeName = workflow.ToolLoopInvestigateHostWorkflowName
 	}
-	wf, err := r.Workflows.Get(intent.Name)
+	wf, err := r.Workflows.Get(routeName)
 	if err != nil {
-		return QueryResult{}, err
+		routeWarnings = append(routeWarnings, "intent workflow not found; routed to tool loop workflow")
+		routeName = workflow.ToolLoopInvestigateHostWorkflowName
+		wf, err = r.Workflows.Get(routeName)
+		if err != nil {
+			return QueryResult{}, err
+		}
+	}
+	if routeName == workflow.ToolLoopInvestigateHostWorkflowName {
+		intent.Name = routeName
+		if intent.Parameters == nil {
+			intent.Parameters = map[string]string{}
+		}
+		if intent.Parameters["host_id"] == "" {
+			if hostID := extractHostID(message); hostID != "" {
+				intent.Parameters["host_id"] = hostID
+			}
+		}
 	}
 	recorder := &tool.Recorder{}
 	result, err := wf.Run(ctx, workflow.Context{
@@ -61,6 +80,7 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 	if err != nil {
 		return QueryResult{}, err
 	}
+	result.Warnings = append(routeWarnings, result.Warnings...)
 	if r.MaxToolCalls > 0 && len(result.ToolCalls) > r.MaxToolCalls {
 		result.Warnings = append(result.Warnings, "tool call count exceeded configured limit")
 	}
@@ -75,4 +95,8 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 		ToolCalls:  result.ToolCalls,
 		DurationMS: time.Since(started).Milliseconds(),
 	}, nil
+}
+
+func extractHostID(message string) string {
+	return regexp.MustCompile(`host-\d{3}`).FindString(message)
 }

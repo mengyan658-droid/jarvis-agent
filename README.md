@@ -1,19 +1,37 @@
 # jarvis-agent
 
-`jarvis-agent` 是一个面向基础设施运维场景的 Go Agent 示例项目。当前版本不接入真实 LLM 或 Jarvis Server，所有外部依赖都通过 Mock Client 提供。
+`jarvis-agent` 是一个面向基础设施运维场景的 Go Agent 示例项目。当前版本仍使用 Mock Jarvis/Monitor/Change/CMDB Client，但 LLM 已支持 Mock、智谱 GLM 和 OpenAI-compatible API。
 
 ## 架构
 
-- `AgentRuntime`：只负责意图解析、工作流路由和调度。
-- `Workflow`：负责编排业务步骤，当前实现查询故障机和诊断单台机器。
+- `AgentRuntime`：只负责意图解析、工作流路由和调度；未知 intent 会兜底进入 tool loop。
+- `Workflow`：负责编排业务步骤，当前实现固定 Workflow 和原生 function calling tool loop。
 - `Tool`：统一封装外部服务调用，并记录 tool call。
 - `Client`：定义外部服务接口，并提供 Mock 实现。
 - `Domain`：保存领域对象和确定性故障评分逻辑，不依赖 HTTP、LLM SDK 或具体 Client。
 
+核心调用链：
+
+```text
+HTTP API
+  -> AgentRuntime
+    -> LLM ParseIntent
+    -> WorkflowRegistry
+      -> 固定 Workflow
+        -> ToolRegistry -> Tool -> Client
+        -> FaultAnalyzer
+      -> Tool Loop Workflow
+        -> LLM tools/tool_calls loop
+        -> ToolPolicy/Normalizer
+        -> ToolRegistry -> Tool -> Client
+        -> FaultAnalyzer
+```
+
 ## 已实现场景
 
-- 查询故障机：根据区域、环境和最近一小时窗口查询主机，拉取指标、告警、变更、CMDB 信息，执行故障评分并默认只返回故障机器。
-- 诊断单台机器：提取 `host-001` 形式的 Host ID，查询相关证据后生成单机诊断。
+- 查询故障机：固定 Workflow，根据区域、环境和最近一小时窗口查询主机，拉取指标、告警、变更、CMDB 信息，执行故障评分并默认只返回故障机器。
+- 诊断单台机器：固定 Workflow，提取 `host-001` 形式的 Host ID，查询相关证据后生成单机诊断。
+- 排查单台机器根因：原生 function calling tool loop，由模型提出 `tool_calls`，本地规范化、去重、执行工具，并用 `FaultAnalyzer` 做确定性评分。
 
 ## Mock 数据
 
@@ -225,7 +243,7 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -d '{"message":"诊断 host-001"}'
 ```
 
-原生 function calling 排查单台机器：
+原生 function calling tool loop 排查单台机器：
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/agent/query \
@@ -236,7 +254,22 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
   -d '{"message":"排查 host-001 的根因"}'
 ```
 
-这条请求会路由到 `tool_loop_investigate_host`，实现方式是模型原生 function calling：
+这条请求会路由到 `tool_loop_investigate_host`。
+
+Loop 流程：
+
+```text
+1. Runtime 解析 intent，路由到 tool_loop_investigate_host。
+2. Workflow 将当前阶段允许的 tools 传给 LLM。
+3. LLM 返回 tool_calls。
+4. 本地规范化参数并生成 canonical key。
+5. 本地策略判断是否允许执行、是否重复、是否缺少前置证据。
+6. 允许执行时通过 ToolRegistry 调用 Tool。
+7. Tool observation 以 role=tool 回传给 LLM。
+8. assess_fault 完成后不再开放 tools，生成最终诊断摘要。
+```
+
+Function calling 交互方式：
 
 - 请求模型时传入 `tools`
 - 模型返回 `tool_calls`
@@ -247,3 +280,29 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
 响应的 `results.function_call_trace` 会展示每次函数调用和观测结果；原来的 `诊断 host-001` 仍然走固定 Workflow。
 
 如果 LLM 返回了 `unknown` 或未注册的 intent name，Runtime 会兜底路由到 `tool_loop_investigate_host`。兜底时会优先复用 LLM 解析出的 `host_id`，如果没有则从用户原始消息里提取 `host-001` 这类 Host ID。
+
+Tool loop 带本地稳定性控制，不是模型想调什么就直接执行什么：
+
+- 每轮只向模型暴露当前阶段允许调用的 tools。
+- 工具参数会被本地规范化，只保留 `host_id`。
+- 重复 tool call 会按 canonical key 去重，例如 `query_metrics:host-001:last_1h`。
+- 模型新增无关参数不会绕过去重。
+- 重复调用不会再次打外部 Tool，而是返回 `skipped_duplicate` observation。
+- `assess_fault` 只会在证据工具完成后开放，完成后不再继续开放工具。
+
+当前 canonical key：
+
+```text
+get_host:host-001
+query_metrics:host-001:last_1h
+query_alarms:host-001
+query_changes:host-001:last_1h
+query_cmdb:host-001
+assess_fault:host-001:evidence_v1
+```
+
+稳定性优化详细记录见：
+
+```text
+improve/tool-loop-stability.md
+```

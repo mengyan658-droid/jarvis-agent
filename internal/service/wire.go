@@ -32,6 +32,7 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 		tool.QueryAlarmsTool{Client: monitorClient},
 		tool.QueryChangesTool{Client: changeClient},
 		tool.QueryCMDBTool{Client: cmdbClient},
+		tool.ResolveTimeRangeTool{},
 	)
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},

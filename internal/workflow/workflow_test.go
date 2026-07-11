@@ -23,6 +23,7 @@ func TestQueryFaultyHostsWorkflow(t *testing.T) {
 		tool.QueryAlarmsTool{Client: monitor.NewMockClient(store)},
 		tool.QueryChangesTool{Client: change.NewMockClient(store)},
 		tool.QueryCMDBTool{Client: cmdb.NewMockClient(store)},
+		tool.ResolveTimeRangeTool{},
 	)
 	result, err := QueryFaultyHostsWorkflow{}.Run(context.Background(), Context{
 		Intent:       client.Intent{Name: "query_faulty_hosts", Parameters: map[string]string{"region": "east-china", "environment": "production"}},
@@ -48,6 +49,7 @@ func TestDiagnoseHostWorkflow(t *testing.T) {
 		tool.QueryAlarmsTool{Client: monitor.NewMockClient(store)},
 		tool.QueryChangesTool{Client: change.NewMockClient(store)},
 		tool.QueryCMDBTool{Client: cmdb.NewMockClient(store)},
+		tool.ResolveTimeRangeTool{},
 	)
 	result, err := DiagnoseHostWorkflow{}.Run(context.Background(), Context{
 		Intent:       client.Intent{Name: "diagnose_host", Parameters: map[string]string{"host_id": "host-003"}},

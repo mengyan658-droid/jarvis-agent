@@ -55,8 +55,8 @@ func (c *MockClient) ParseIntent(ctx context.Context, message string) (client.In
 	if strings.Contains(message, "预发") || strings.Contains(message, "测试") {
 		params["environment"] = "staging"
 	}
-	if strings.Contains(message, "最近一小时") {
-		params["since"] = "1h"
+	if since := parseSince(message); since != "" {
+		params["since"] = since
 	}
 	if id := extractHostID(message); id != "" {
 		params["host_id"] = id
@@ -121,6 +121,99 @@ func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolCh
 			},
 		}},
 	}, nil
+}
+
+func parseSince(message string) string {
+	switch {
+	case strings.Contains(message, "最近一小时") || strings.Contains(message, "近一小时"):
+		return "1h"
+	case strings.Contains(message, "最近一周") || strings.Contains(message, "近一周") || strings.Contains(message, "过去一周"):
+		return "1w"
+	case strings.Contains(message, "今天"):
+		return "today"
+	case strings.Contains(message, "昨天"):
+		return "yesterday"
+	}
+	if since := parseCompactSince(message); since != "" {
+		return since
+	}
+	return parseChineseSince(message)
+}
+
+func parseCompactSince(message string) string {
+	matches := regexp.MustCompile(`(?i)(?:最近|近|过去|last\s*)?(\d+)\s*([mhdw])\b`).FindStringSubmatch(message)
+	if len(matches) != 3 {
+		return ""
+	}
+	amount, err := strconv.Atoi(matches[1])
+	if err != nil || amount <= 0 {
+		return ""
+	}
+	return strconv.Itoa(amount) + strings.ToLower(matches[2])
+}
+
+func parseChineseSince(message string) string {
+	if !(strings.Contains(message, "最近") || strings.Contains(message, "近") || strings.Contains(message, "过去")) {
+		return ""
+	}
+	matches := regexp.MustCompile(`([0-9一二两三四五六七八九十]+)\s*(分钟|小时|天|日|周|星期)`).FindStringSubmatch(message)
+	if len(matches) != 3 {
+		return ""
+	}
+	amount, ok := parseSmallChineseNumber(matches[1])
+	if !ok || amount <= 0 {
+		return ""
+	}
+	unit := "d"
+	switch matches[2] {
+	case "分钟":
+		unit = "m"
+	case "小时":
+		unit = "h"
+	case "周", "星期":
+		unit = "w"
+	}
+	return strconv.Itoa(amount) + unit
+}
+
+func parseSmallChineseNumber(s string) (int, bool) {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n, true
+	}
+	values := map[rune]int{
+		'一': 1,
+		'二': 2,
+		'两': 2,
+		'三': 3,
+		'四': 4,
+		'五': 5,
+		'六': 6,
+		'七': 7,
+		'八': 8,
+		'九': 9,
+	}
+	if s == "十" {
+		return 10, true
+	}
+	runes := []rune(s)
+	if len(runes) == 1 {
+		n, ok := values[runes[0]]
+		return n, ok
+	}
+	if len(runes) == 2 && runes[1] == '十' {
+		n, ok := values[runes[0]]
+		return n * 10, ok
+	}
+	if len(runes) == 2 && runes[0] == '十' {
+		n, ok := values[runes[1]]
+		return 10 + n, ok
+	}
+	if len(runes) == 3 && runes[1] == '十' {
+		tens, ok1 := values[runes[0]]
+		ones, ok2 := values[runes[2]]
+		return tens*10 + ones, ok1 && ok2
+	}
+	return 0, false
 }
 
 func extractHostID(message string) string {

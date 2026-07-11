@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/domain"
@@ -51,6 +50,8 @@ type toolLoopState struct {
 	evidence       domain.FaultEvidence
 	assessment     domain.FaultAssessment
 	assessmentDone bool
+	timeRange      domain.TimeRange
+	timeRangeReady bool
 }
 
 type normalizedFunctionCall struct {
@@ -242,7 +243,11 @@ func executeNormalizedFunctionCall(ctx context.Context, wfctx Context, normalize
 		state.completed[tool.QueryAlarmsToolName] = true
 		return state.evidence.Alarms, nil
 	case tool.QueryChangesToolName:
-		out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: hostID, Since: time.Now().Add(-1 * time.Hour)}, wfctx.ToolRecorder)
+		timeRange, err := ensureToolLoopTimeRange(ctx, wfctx, state)
+		if err != nil {
+			return nil, err
+		}
+		out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: hostID, TimeRange: timeRange}, wfctx.ToolRecorder)
 		if err != nil {
 			return nil, err
 		}
@@ -265,6 +270,19 @@ func executeNormalizedFunctionCall(ctx context.Context, wfctx Context, normalize
 	default:
 		return nil, fmt.Errorf("unsupported function call %q", normalized.Name)
 	}
+}
+
+func ensureToolLoopTimeRange(ctx context.Context, wfctx Context, state *toolLoopState) (domain.TimeRange, error) {
+	if state.timeRangeReady {
+		return state.timeRange, nil
+	}
+	out, err := wfctx.Tools.Execute(ctx, tool.ResolveTimeRangeToolName, timeRangeInputFromParameters(wfctx.Intent.Parameters), wfctx.ToolRecorder)
+	if err != nil {
+		return domain.TimeRange{}, err
+	}
+	state.timeRange = out.(domain.TimeRange)
+	state.timeRangeReady = true
+	return state.timeRange, nil
 }
 
 func normalizeFunctionCall(call client.ToolCall, fallbackHostID string) (normalizedFunctionCall, error) {

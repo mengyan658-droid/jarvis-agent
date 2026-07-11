@@ -29,8 +29,8 @@ func ResolveTimeRangeJSONSchema() map[string]any {
 			},
 			"unit": map[string]any{
 				"type":        "string",
-				"enum":        []string{"minute", "hour", "day"},
-				"description": "Unit for kind=relative. Do not use seconds or milliseconds.",
+				"enum":        []string{"minute", "hour", "day", "week"},
+				"description": "Unit for kind=relative. Use week for last/near one week. Do not use seconds or milliseconds.",
 			},
 			"start_text": map[string]any{
 				"type":        "string",
@@ -56,7 +56,7 @@ func resolveTimeRangeToolDescription() string {
 		"Use kind=default when the user does not specify time; it means the last 1 hour. " +
 		"Use kind=today for today 00:00 to now in the selected timezone. " +
 		"Use kind=yesterday for yesterday natural day, not last 24 hours. " +
-		"Use kind=relative for last N minutes/hours/days. " +
+		"Use kind=relative for last N minutes/hours/days/weeks. " +
 		"Use kind=since for from a user-provided start time to now. " +
 		"Use kind=absolute_range only when the user provides both start and end time."
 }

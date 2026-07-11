@@ -2,9 +2,10 @@ package tool
 
 import (
 	"context"
-	"time"
+	"fmt"
 
 	"jarvis-agent/internal/client"
+	"jarvis-agent/internal/domain"
 )
 
 const (
@@ -51,8 +52,8 @@ func (t QueryAlarmsTool) Execute(ctx context.Context, input any) (any, error) {
 }
 
 type QueryChangesInput struct {
-	HostID string
-	Since  time.Time
+	HostID    string
+	TimeRange domain.TimeRange
 }
 
 type QueryChangesTool struct{ Client client.ChangeClient }
@@ -60,7 +61,16 @@ type QueryChangesTool struct{ Client client.ChangeClient }
 func (t QueryChangesTool) Name() string { return QueryChangesToolName }
 func (t QueryChangesTool) Execute(ctx context.Context, input any) (any, error) {
 	in := input.(QueryChangesInput)
-	return t.Client.QueryRecentChanges(ctx, in.HostID, in.Since)
+	if in.HostID == "" {
+		return nil, fmt.Errorf("host_id is required")
+	}
+	if in.TimeRange.Start.IsZero() || in.TimeRange.End.IsZero() {
+		return nil, fmt.Errorf("time_range start and end are required")
+	}
+	if !in.TimeRange.Start.Before(in.TimeRange.End) {
+		return nil, fmt.Errorf("time_range start must be before end")
+	}
+	return t.Client.QueryRecentChanges(ctx, in.HostID, in.TimeRange)
 }
 
 type QueryCMDBInput struct{ HostID string }

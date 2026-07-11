@@ -197,7 +197,7 @@ func (c *OpenAICompatibleClient) chatCompletionsURL() string {
 func intentSystemPrompt() string {
 	return `你是 Jarvis Agent 的意图解析器，只能输出 JSON，不要输出 Markdown。
 输出格式：
-{"name":"query_faulty_hosts|diagnose_host|tool_loop_investigate_host|unknown","parameters":{"region":"","environment":"","since":"","host_id":""}}
+{"name":"query_faulty_hosts|diagnose_host|tool_loop_investigate_host|unknown","parameters":{"region":"","environment":"","since":"","start_text":"","end_text":"","host_id":""}}
 
 规则：
 - “故障机”“异常机器” => query_faulty_hosts
@@ -208,8 +208,15 @@ func intentSystemPrompt() string {
 - “华南” => region=south-china
 - “生产” => environment=production
 - “预发”“测试” => environment=staging
-- “最近一小时” => since=1h
+- “最近N分钟”“近N分钟” => since=Nm，例如最近30分钟 => since=30m
+- “最近N小时”“近N小时” => since=Nh，例如最近5小时 => since=5h
+- “最近N天”“近N天” => since=Nd，例如最近2天 => since=2d
+- “最近N周”“近N周” => since=Nw，例如近一周 => since=1w
+- “今天” => since=today
+- “昨天” => since=yesterday
+- 用户给出明确起止时间，例如“7月1号到7月5号”“2026-07-01 到 2026-07-05” => start_text=原始开始时间文本，end_text=原始结束时间文本，since 留空
 - 提取 host-001 这类 Host ID 到 host_id
+- 不要输出具体时间戳，时间戳由 resolve_time_range 工具在本地计算
 - 无法识别时 name=unknown`
 }
 

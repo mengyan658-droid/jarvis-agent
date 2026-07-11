@@ -66,6 +66,36 @@ func TestResolveTimeRangeToolRelative(t *testing.T) {
 	}
 }
 
+func TestResolveTimeRangeToolRelativeTwoDays(t *testing.T) {
+	now, loc := fixedNow()
+	out := executeResolveTimeRange(t, ResolveTimeRangeInput{
+		Kind:   "relative",
+		Amount: 2,
+		Unit:   "day",
+	}, now, loc)
+
+	wantStart := time.Date(2026, 7, 6, 10, 30, 0, 0, loc)
+	assertTimeRange(t, out, wantStart, now)
+	if out.DurationSec != int64(48*time.Hour/time.Second) {
+		t.Fatalf("unexpected duration: %+v", out)
+	}
+}
+
+func TestResolveTimeRangeToolRelativeOneWeek(t *testing.T) {
+	now, loc := fixedNow()
+	out := executeResolveTimeRange(t, ResolveTimeRangeInput{
+		Kind:   "relative",
+		Amount: 1,
+		Unit:   "week",
+	}, now, loc)
+
+	wantStart := time.Date(2026, 7, 1, 10, 30, 0, 0, loc)
+	assertTimeRange(t, out, wantStart, now)
+	if out.DurationSec != int64(7*24*time.Hour/time.Second) {
+		t.Fatalf("unexpected duration: %+v", out)
+	}
+}
+
 func TestResolveTimeRangeToolSinceParsesChineseTime(t *testing.T) {
 	now, loc := fixedNow()
 	out := executeResolveTimeRange(t, ResolveTimeRangeInput{
@@ -94,6 +124,35 @@ func TestResolveTimeRangeToolAbsoluteRange(t *testing.T) {
 	if out.Source != "absolute_range" {
 		t.Fatalf("unexpected source: %s", out.Source)
 	}
+}
+
+func TestResolveTimeRangeToolAbsoluteChineseDateRangeIncludesEndDate(t *testing.T) {
+	now, loc := fixedNow()
+	out := executeResolveTimeRange(t, ResolveTimeRangeInput{
+		Kind:      "absolute_range",
+		StartText: "7月1号",
+		EndText:   "7月5号",
+	}, now, loc)
+
+	wantStart := time.Date(2026, 7, 1, 0, 0, 0, 0, loc)
+	wantEnd := time.Date(2026, 7, 6, 0, 0, 0, 0, loc)
+	assertTimeRange(t, out, wantStart, wantEnd)
+	if out.DurationSec != int64(5*24*time.Hour/time.Second) {
+		t.Fatalf("unexpected duration: %+v", out)
+	}
+}
+
+func TestResolveTimeRangeToolAbsoluteDateRangeWithTimeKeepsExactEnd(t *testing.T) {
+	now, loc := fixedNow()
+	out := executeResolveTimeRange(t, ResolveTimeRangeInput{
+		Kind:      "absolute_range",
+		StartText: "7月1号 10点",
+		EndText:   "7月5号 18点",
+	}, now, loc)
+
+	wantStart := time.Date(2026, 7, 1, 10, 0, 0, 0, loc)
+	wantEnd := time.Date(2026, 7, 5, 18, 0, 0, 0, loc)
+	assertTimeRange(t, out, wantStart, wantEnd)
 }
 
 func TestResolveTimeRangeToolAcceptsMapInput(t *testing.T) {
@@ -173,7 +232,7 @@ func TestResolveTimeRangeFunctionToolSchema(t *testing.T) {
 	properties := def.Function.Parameters["properties"].(map[string]any)
 	unit := properties["unit"].(map[string]any)
 	enum := unit["enum"].([]string)
-	if len(enum) != 3 || enum[0] != "minute" || enum[1] != "hour" || enum[2] != "day" {
+	if len(enum) != 4 || enum[0] != "minute" || enum[1] != "hour" || enum[2] != "day" || enum[3] != "week" {
 		t.Fatalf("schema should expose canonical units only: %+v", enum)
 	}
 }

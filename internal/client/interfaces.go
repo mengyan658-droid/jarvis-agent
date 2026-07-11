@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"jarvis-agent/internal/domain"
 )
@@ -24,7 +23,7 @@ type MonitorClient interface {
 }
 
 type ChangeClient interface {
-	QueryRecentChanges(ctx context.Context, hostID string, since time.Time) ([]domain.ChangeRecord, error)
+	QueryRecentChanges(ctx context.Context, hostID string, timeRange domain.TimeRange) ([]domain.ChangeRecord, error)
 }
 
 type CMDBClient interface {

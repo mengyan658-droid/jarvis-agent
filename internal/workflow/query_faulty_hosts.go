@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"time"
 
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/domain"
@@ -20,7 +19,7 @@ func (w QueryFaultyHostsWorkflow) Run(ctx context.Context, wfctx Context) (Resul
 	warnings := []string{}
 	params := wfctx.Intent.Parameters
 	var query client.HostQuery
-	since := time.Now().Add(-1 * time.Hour)
+	var timeRange domain.TimeRange
 
 	if err := runStep(&steps, "parse_query_parameters", func() error {
 		query.Region = params["region"]
@@ -33,6 +32,12 @@ func (w QueryFaultyHostsWorkflow) Run(ctx context.Context, wfctx Context) (Resul
 	if err := runStep(&steps, "validate_parameters", func() error {
 		return nil
 	}); err != nil {
+		return Result{}, err
+	}
+
+	var err error
+	timeRange, err = resolveWorkflowTimeRange(ctx, wfctx, &steps)
+	if err != nil {
 		return Result{}, err
 	}
 
@@ -67,7 +72,7 @@ func (w QueryFaultyHostsWorkflow) Run(ctx context.Context, wfctx Context) (Resul
 			return Result{}, err
 		}
 		if err := runStep(&steps, "query_recent_changes:"+host.ID, func() error {
-			out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: host.ID, Since: since}, wfctx.ToolRecorder)
+			out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: host.ID, TimeRange: timeRange}, wfctx.ToolRecorder)
 			if err != nil {
 				return err
 			}

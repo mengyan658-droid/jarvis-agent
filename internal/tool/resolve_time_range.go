@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -126,6 +127,9 @@ func (t ResolveTimeRangeTool) resolve(in ResolveTimeRangeInput, now time.Time, l
 		end, err := parseTimeText(in.EndText, now, loc)
 		if err != nil {
 			return time.Time{}, time.Time{}, "", false, fmt.Errorf("parse end_text: %w", err)
+		}
+		if isDateOnlyTimeText(in.EndText) {
+			end = end.AddDate(0, 0, 1)
 		}
 		return start, end, "absolute_range", false, nil
 	default:
@@ -293,6 +297,8 @@ func lookbackDuration(amount int, unit string) (time.Duration, error) {
 		return time.Duration(amount) * time.Hour, nil
 	case "day":
 		return time.Duration(amount) * 24 * time.Hour, nil
+	case "week":
+		return time.Duration(amount) * 7 * 24 * time.Hour, nil
 	default:
 		return 0, fmt.Errorf("unsupported time unit %q", unit)
 	}
@@ -310,6 +316,8 @@ func canonicalTimeUnit(unit string) (string, error) {
 		return "hour", nil
 	case "d", "day", "days":
 		return "day", nil
+	case "w", "week", "weeks":
+		return "week", nil
 	default:
 		return "", fmt.Errorf("unsupported time unit %q", unit)
 	}
@@ -366,6 +374,9 @@ func parseTimeText(text string, now time.Time, loc *time.Location) (time.Time, e
 		return base, nil
 	}
 
+	if t, ok := parseChineseDateTime(cleaned, now, loc); ok {
+		return t, nil
+	}
 	if t, ok := parseAbsoluteTime(cleaned, loc); ok {
 		return t, nil
 	}
@@ -374,6 +385,129 @@ func parseTimeText(text string, now time.Time, loc *time.Location) (time.Time, e
 	}
 
 	return time.Time{}, fmt.Errorf("unsupported time text %q", text)
+}
+
+func parseChineseDateTime(text string, now time.Time, loc *time.Location) (time.Time, bool) {
+	s := strings.TrimSpace(strings.ReplaceAll(text, "号", "日"))
+	pattern := `^(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日?(?:\s*(上午|下午|晚上|晚间|中午|凌晨|早上)?\s*(\d{1,2})(?:(?:[:：点时])(\d{0,2}))?(?:分)?)?$`
+	matches := regexp.MustCompile(pattern).FindStringSubmatch(s)
+	if len(matches) != 7 {
+		return parseMonthDayDateTime(s, now, loc)
+	}
+	year := now.In(loc).Year()
+	if matches[1] != "" {
+		var err error
+		year, err = strconv.Atoi(matches[1])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	month, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return time.Time{}, false
+	}
+	day, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return time.Time{}, false
+	}
+	hour, minute := 0, 0
+	if matches[5] != "" {
+		hour, err = strconv.Atoi(matches[5])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	if matches[6] != "" {
+		minute, err = strconv.Atoi(matches[6])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	hour = applyChineseDayPeriod(hour, matches[4])
+	return validDateTime(year, time.Month(month), day, hour, minute, 0, loc)
+}
+
+func parseMonthDayDateTime(text string, now time.Time, loc *time.Location) (time.Time, bool) {
+	pattern := `^(\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$`
+	matches := regexp.MustCompile(pattern).FindStringSubmatch(strings.TrimSpace(text))
+	if len(matches) != 6 {
+		return time.Time{}, false
+	}
+	month, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return time.Time{}, false
+	}
+	day, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return time.Time{}, false
+	}
+	hour, minute, second := 0, 0, 0
+	if matches[3] != "" {
+		hour, err = strconv.Atoi(matches[3])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	if matches[4] != "" {
+		minute, err = strconv.Atoi(matches[4])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	if matches[5] != "" {
+		second, err = strconv.Atoi(matches[5])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return validDateTime(now.In(loc).Year(), time.Month(month), day, hour, minute, second, loc)
+}
+
+func applyChineseDayPeriod(hour int, period string) int {
+	switch period {
+	case "下午", "晚上", "晚间":
+		if hour < 12 {
+			return hour + 12
+		}
+	case "中午":
+		if hour < 11 {
+			return hour + 12
+		}
+	}
+	return hour
+}
+
+func validDateTime(year int, month time.Month, day, hour, minute, second int, loc *time.Location) (time.Time, bool) {
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59 {
+		return time.Time{}, false
+	}
+	t := time.Date(year, month, day, hour, minute, second, 0, loc)
+	if t.Year() != year || t.Month() != month || t.Day() != day || t.Hour() != hour || t.Minute() != minute || t.Second() != second {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+func isDateOnlyTimeText(text string) bool {
+	s := strings.TrimSpace(strings.ReplaceAll(text, "号", "日"))
+	if s == "" {
+		return false
+	}
+	if strings.ContainsAny(s, ":：点时分秒") || strings.Contains(s, "上午") || strings.Contains(s, "下午") || strings.Contains(s, "晚上") || strings.Contains(s, "晚间") || strings.Contains(s, "中午") || strings.Contains(s, "凌晨") || strings.Contains(s, "早上") {
+		return false
+	}
+	patterns := []string{
+		`^(?:\d{4}年)?\d{1,2}月\d{1,2}日?$`,
+		`^(?:\d{4}[-/])?\d{1,2}[-/]\d{1,2}$`,
+		`^\d{4}-\d{1,2}-\d{1,2}$`,
+		`^\d{4}/\d{1,2}/\d{1,2}$`,
+	}
+	for _, pattern := range patterns {
+		if regexp.MustCompile(pattern).MatchString(s) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseAbsoluteTime(text string, loc *time.Location) (time.Time, bool) {

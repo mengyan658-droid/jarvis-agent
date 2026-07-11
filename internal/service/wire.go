@@ -2,6 +2,7 @@ package service
 
 import (
 	"log/slog"
+	"os"
 	"strings"
 
 	"jarvis-agent/internal/agent"
@@ -33,7 +34,10 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 		tool.QueryChangesTool{Client: changeClient},
 		tool.QueryCMDBTool{Client: cmdbClient},
 		tool.ResolveTimeRangeTool{},
-	)
+	).WithLogger(logger)
+	if path := os.Getenv("TIME_TEST_LOG"); path != "" {
+		tools.WithTimeTestLogPath(path)
+	}
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},
 		workflow.DiagnoseHostWorkflow{},

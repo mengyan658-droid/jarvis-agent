@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"context"
-	"time"
 
 	"jarvis-agent/internal/domain"
 	"jarvis-agent/internal/tool"
@@ -15,8 +14,8 @@ func (w DiagnoseHostWorkflow) Name() string { return "diagnose_host" }
 func (w DiagnoseHostWorkflow) Run(ctx context.Context, wfctx Context) (Result, error) {
 	steps := []Step{}
 	warnings := []string{}
-	since := time.Now().Add(-1 * time.Hour)
 	var hostID string
+	var timeRange domain.TimeRange
 	var evidence domain.FaultEvidence
 	var assessment domain.FaultAssessment
 
@@ -25,6 +24,12 @@ func (w DiagnoseHostWorkflow) Run(ctx context.Context, wfctx Context) (Result, e
 		hostID, err = requireHostID(wfctx.Intent.Parameters)
 		return err
 	}); err != nil {
+		return Result{}, err
+	}
+
+	var err error
+	timeRange, err = resolveWorkflowTimeRange(ctx, wfctx, &steps)
+	if err != nil {
 		return Result{}, err
 	}
 
@@ -56,7 +61,7 @@ func (w DiagnoseHostWorkflow) Run(ctx context.Context, wfctx Context) (Result, e
 	}
 
 	if err := runStep(&steps, "query_recent_changes", func() error {
-		out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: hostID, Since: since}, wfctx.ToolRecorder)
+		out, err := wfctx.Tools.Execute(ctx, tool.QueryChangesToolName, tool.QueryChangesInput{HostID: hostID, TimeRange: timeRange}, wfctx.ToolRecorder)
 		if err != nil {
 			return err
 		}

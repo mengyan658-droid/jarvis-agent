@@ -23,6 +23,7 @@ func TestToolLoopInvestigateHostWorkflow(t *testing.T) {
 		tool.QueryAlarmsTool{Client: monitor.NewMockClient(store)},
 		tool.QueryChangesTool{Client: change.NewMockClient(store)},
 		tool.QueryCMDBTool{Client: cmdb.NewMockClient(store)},
+		tool.ResolveTimeRangeTool{},
 	)
 	result, err := ToolLoopInvestigateHostWorkflow{}.Run(context.Background(), Context{
 		Intent:       client.Intent{Name: "tool_loop_investigate_host", Parameters: map[string]string{"host_id": "host-001"}},
@@ -52,6 +53,7 @@ func TestToolLoopSkipsDuplicateCanonicalToolCalls(t *testing.T) {
 		tool.QueryAlarmsTool{Client: monitor.NewMockClient(store)},
 		tool.QueryChangesTool{Client: change.NewMockClient(store)},
 		tool.QueryCMDBTool{Client: cmdb.NewMockClient(store)},
+		tool.ResolveTimeRangeTool{},
 	)
 	result, err := ToolLoopInvestigateHostWorkflow{}.Run(context.Background(), Context{
 		Intent:       client.Intent{Name: "tool_loop_investigate_host", Parameters: map[string]string{"host_id": "host-001"}},

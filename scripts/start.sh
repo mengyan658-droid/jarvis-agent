@@ -17,6 +17,7 @@ PID_FILE="${PID_FILE:-$RUNTIME_DIR/jarvis-agent.pid}"
 LOG_DIR="${LOG_DIR:-$ROOT_DIR/logger}"
 LOG_DATE="${LOG_DATE:-$(date +%F)}"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/jarvis-agent-$LOG_DATE.log}"
+TIME_TEST_LOG="${TIME_TEST_LOG:-$LOG_DIR/time-test.log}"
 BIN_FILE="${BIN_FILE:-$RUNTIME_DIR/jarvis-agent}"
 APP_PORT="${APP_PORT:-8080}"
 AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-10}"
@@ -36,6 +37,9 @@ fi
 mkdir -p "$RUNTIME_DIR" "$LOG_DIR"
 if [ ! -f "$LOG_FILE" ]; then
   : >"$LOG_FILE"
+fi
+if [ ! -f "$TIME_TEST_LOG" ]; then
+  : >"$TIME_TEST_LOG"
 fi
 
 if [ -f "$PID_FILE" ]; then
@@ -57,6 +61,7 @@ fi
 echo "starting jarvis-agent on port $APP_PORT"
 echo "llm config: provider=$LLM_PROVIDER model=${LLM_MODEL:-<default>} base_url=${LLM_API_BASE_URL:-<default>}"
 echo "agent timeout: $AGENT_TIMEOUT"
+echo "time test log: $TIME_TEST_LOG"
 (
   cd "$ROOT_DIR"
   go build -o "$BIN_FILE" ./cmd/server
@@ -68,6 +73,7 @@ echo "agent timeout: $AGENT_TIMEOUT"
   LLM_API_BASE_URL="$LLM_API_BASE_URL" \
   LLM_API_KEY="$LLM_API_KEY" \
   LLM_MODEL="$LLM_MODEL" \
+  TIME_TEST_LOG="$TIME_TEST_LOG" \
   nohup "$BIN_FILE" >>"$LOG_FILE" 2>&1 &
   echo $! >"$PID_FILE"
 )

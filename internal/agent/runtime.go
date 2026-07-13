@@ -9,6 +9,7 @@ import (
 
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/domain"
+	"jarvis-agent/internal/skill"
 	"jarvis-agent/internal/tool"
 	"jarvis-agent/internal/workflow"
 )
@@ -16,6 +17,7 @@ import (
 type Runtime struct {
 	LLM          client.LLMClient
 	Tools        *tool.Registry
+	Skills       *skill.Registry
 	Workflows    *workflow.Registry
 	Analyzer     *domain.FaultAnalyzer
 	Timeout      time.Duration
@@ -41,7 +43,7 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 	defer cancel()
 	ctx = tool.ContextWithRequestID(ctx, requestID)
 
-	intent, err := r.LLM.ParseIntent(ctx, message)
+	intent, routeWarnings, err := r.selectIntent(ctx, message)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -58,7 +60,10 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 		}
 	}
 	routeName := intent.Name
-	routeWarnings := []string{}
+	if spec, ok := r.skillForIntent(routeName); ok {
+		routeName = spec.Workflow
+		intent.Name = spec.Workflow
+	}
 	if routeName == "" || routeName == "unknown" {
 		routeWarnings = append(routeWarnings, "intent is unknown; routed to tool loop workflow")
 		routeName = workflow.ToolLoopInvestigateHostWorkflowName
@@ -114,6 +119,57 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 
 func extractHostID(message string) string {
 	return regexp.MustCompile(`host-\d{3}`).FindString(message)
+}
+
+func (r *Runtime) selectIntent(ctx context.Context, message string) (client.Intent, []string, error) {
+	warnings := []string{}
+	if r.Skills == nil || len(r.Skills.Names()) == 0 {
+		intent, err := r.LLM.ParseIntent(ctx, message)
+		return intent, warnings, err
+	}
+	functionLLM, ok := r.LLM.(client.FunctionCallingClient)
+	if !ok {
+		intent, err := r.LLM.ParseIntent(ctx, message)
+		return intent, warnings, err
+	}
+
+	assistant, err := functionLLM.ChatWithTools(ctx, []client.ToolChatMessage{
+		{Role: "system", Content: skill.RouterSystemPrompt(r.Skills)},
+		{Role: "user", Content: message},
+	}, []client.FunctionTool{skill.SelectSkillFunctionTool(r.Skills)})
+	if err != nil {
+		warnings = append(warnings, "skill router failed; used intent parser")
+		intent, parseErr := r.LLM.ParseIntent(ctx, message)
+		return intent, warnings, parseErr
+	}
+	for _, call := range assistant.ToolCalls {
+		if call.Function.Name != skill.SelectSkillFunctionName {
+			continue
+		}
+		selection, err := skill.DecodeSelection(call.Function.Arguments)
+		if err != nil {
+			warnings = append(warnings, "skill router returned invalid arguments; used intent parser")
+			break
+		}
+		if _, ok := r.Skills.Get(selection.Skill); !ok {
+			warnings = append(warnings, "skill router returned unknown skill; used intent parser")
+			break
+		}
+		return client.Intent{Name: selection.Skill, Parameters: selection.Parameters}, warnings, nil
+	}
+	warnings = append(warnings, "skill router returned no skill; used intent parser")
+	intent, err := r.LLM.ParseIntent(ctx, message)
+	return intent, warnings, err
+}
+
+func (r *Runtime) skillForIntent(name string) (skill.Spec, bool) {
+	if r.Skills == nil {
+		return skill.Spec{}, false
+	}
+	if spec, ok := r.Skills.Get(name); ok {
+		return spec, true
+	}
+	return r.Skills.GetByIntent(name)
 }
 
 func extractAbsoluteTimeRange(message string) (string, string, bool) {

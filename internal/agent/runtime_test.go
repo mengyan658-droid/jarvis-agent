@@ -32,3 +32,27 @@ func TestRuntimeFallbacksUnknownIntentToToolLoop(t *testing.T) {
 		t.Fatal("expected fallback warning")
 	}
 }
+
+func TestRuntimeRoutesWithSkillSelection(t *testing.T) {
+	runtime := service.NewRuntime(config.Config{
+		AgentTimeout:      5 * time.Second,
+		AgentMaxSteps:     10,
+		AgentMaxToolCalls: 20,
+	}, slog.Default())
+
+	result, err := runtime.Query(context.Background(), "req-test", "诊断 host-003 最近2天的问题")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Workflow != "diagnose_host" {
+		t.Fatalf("unexpected workflow: %s", result.Workflow)
+	}
+	if result.Intent != "diagnose_host" {
+		t.Fatalf("unexpected intent: %s", result.Intent)
+	}
+	for _, warning := range result.Warnings {
+		if warning == "skill router returned no skill; used intent parser" {
+			t.Fatalf("skill router should select a skill, warnings=%+v", result.Warnings)
+		}
+	}
+}

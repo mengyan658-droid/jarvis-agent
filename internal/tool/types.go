@@ -79,6 +79,14 @@ func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
 }
 
+func (r *Registry) Has(name string) bool {
+	if r == nil {
+		return false
+	}
+	_, ok := r.tools[name]
+	return ok
+}
+
 func (r *Registry) Execute(ctx context.Context, name string, input any, recorder *Recorder) (any, error) {
 	t, ok := r.tools[name]
 	if !ok {

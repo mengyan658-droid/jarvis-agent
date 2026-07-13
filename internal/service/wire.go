@@ -14,6 +14,7 @@ import (
 	"jarvis-agent/internal/client/monitor"
 	"jarvis-agent/internal/config"
 	"jarvis-agent/internal/domain"
+	"jarvis-agent/internal/skill"
 	"jarvis-agent/internal/tool"
 	"jarvis-agent/internal/workflow"
 )
@@ -38,6 +39,10 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 	if path := os.Getenv("TIME_TEST_LOG"); path != "" {
 		tools.WithTimeTestLogPath(path)
 	}
+	skills := loadSkills(logger)
+	if err := skills.ValidateTools(tools.Has); err != nil {
+		logger.Warn("skill tool validation failed", "error", err)
+	}
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},
 		workflow.DiagnoseHostWorkflow{},
@@ -46,12 +51,36 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 	return &agent.Runtime{
 		LLM:          llmClient,
 		Tools:        tools,
+		Skills:       skills,
 		Workflows:    workflows,
 		Analyzer:     domain.NewFaultAnalyzer(),
 		Timeout:      cfg.AgentTimeout,
 		MaxSteps:     cfg.AgentMaxSteps,
 		MaxToolCalls: cfg.AgentMaxToolCalls,
 	}
+}
+
+func loadSkills(logger *slog.Logger) *skill.Registry {
+	dirs := []string{}
+	if dir := os.Getenv("SKILLS_DIR"); dir != "" {
+		dirs = append(dirs, dir)
+	}
+	dirs = append(dirs, "skills", "../skills", "../../skills")
+	for _, dir := range dirs {
+		registry, err := skill.LoadDir(dir)
+		if err != nil {
+			logger.Warn("load skills failed", "dir", dir, "error", err)
+			continue
+		}
+		if len(registry.Names()) == 0 {
+			continue
+		}
+		logger.Info("loaded skills", "dir", dir, "count", len(registry.Names()), "skills", registry.Names())
+		return registry
+	}
+	logger.Warn("no skills loaded")
+	registry, _ := skill.NewRegistry()
+	return registry
 }
 
 func newLLMClient(cfg config.Config, logger *slog.Logger) client.LLMClient {

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -23,6 +24,10 @@ func (c *MockClient) ParseIntent(ctx context.Context, message string) (client.In
 	if err := c.Behavior.Before(ctx); err != nil {
 		return client.Intent{}, err
 	}
+	return parseMockIntent(message), nil
+}
+
+func parseMockIntent(message string) client.Intent {
 	params := map[string]string{}
 	name := "unknown"
 	if strings.Contains(message, "故障机") || strings.Contains(message, "异常机器") {
@@ -61,7 +66,7 @@ func (c *MockClient) ParseIntent(ctx context.Context, message string) (client.In
 	if id := extractHostID(message); id != "" {
 		params["host_id"] = id
 	}
-	return client.Intent{Name: name, Parameters: params}, nil
+	return client.Intent{Name: name, Parameters: params}
 }
 
 func (c *MockClient) GenerateFaultSummary(ctx context.Context, assessments []domain.FaultAssessment) (string, error) {
@@ -81,6 +86,9 @@ func (c *MockClient) GenerateHostDiagnosis(ctx context.Context, assessment domai
 func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolChatMessage, tools []client.FunctionTool) (client.ToolChatMessage, error) {
 	if err := c.Behavior.Before(ctx); err != nil {
 		return client.ToolChatMessage{}, err
+	}
+	if isSelectSkillRequest(tools) {
+		return mockSelectSkill(messages), nil
 	}
 	hostID := "host-001"
 	for _, msg := range messages {
@@ -121,6 +129,48 @@ func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolCh
 			},
 		}},
 	}, nil
+}
+
+func isSelectSkillRequest(tools []client.FunctionTool) bool {
+	for _, tool := range tools {
+		if tool.Function.Name == "select_skill" {
+			return true
+		}
+	}
+	return false
+}
+
+func mockSelectSkill(messages []client.ToolChatMessage) client.ToolChatMessage {
+	userMessage := ""
+	for _, msg := range messages {
+		if msg.Role == "user" {
+			userMessage = msg.Content
+		}
+	}
+	intent := parseMockIntent(userMessage)
+	if intent.Name == "unknown" || intent.Name == "" {
+		return client.ToolChatMessage{Role: "assistant", Content: "unknown"}
+	}
+	payload := map[string]any{
+		"skill":      intent.Name,
+		"parameters": intent.Parameters,
+		"confidence": 0.9,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = []byte(`{"skill":"unknown","parameters":{},"confidence":0}`)
+	}
+	return client.ToolChatMessage{
+		Role: "assistant",
+		ToolCalls: []client.ToolCall{{
+			ID:   "call-select-skill",
+			Type: "function",
+			Function: client.FunctionCall{
+				Name:      "select_skill",
+				Arguments: string(data),
+			},
+		}},
+	}
 }
 
 func parseSince(message string) string {

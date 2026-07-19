@@ -4,6 +4,7 @@ logger/*.log
 *.log
 
 # Go build/test outputs
+.cache/
 bin/
 dist/
 *.test

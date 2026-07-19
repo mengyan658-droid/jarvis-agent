@@ -58,123 +58,82 @@ func (w ModelErrorDailyReportWorkflow) Run(ctx context.Context, wfctx Context) (
 	timeRangeInput := reportTimeRangeInput(params)
 	var records []domain.ErrorRequestCount
 	report := ModelErrorDailyReportResult{}
-
-	if err := runStep(&steps, "plan_report_time_range", func() error {
-		planned, err := planReportTimeRange(ctx, wfctx)
-		if err != nil {
-			warnings = append(warnings, "llm time range planning failed; used normalized intent parameters")
-			return nil
-		}
-		timeRangeInput = planned
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "resolve_report_time_range", func() error {
-		out, err := wfctx.Tools.Execute(ctx, tool.ResolveTimeRangeToolName, timeRangeInput, wfctx.ToolRecorder)
-		if err != nil {
-			return err
-		}
-		query.TimeRange = out.(domain.TimeRange)
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "plan_error_count_query", func() error {
-		query.DeviceModels = parameterStringList(params, "device_models", "device_model", "models", "model")
-		query.IDCs = parameterStringList(params, "idcs", "idc")
-		query.ErrorCode = firstNonEmpty(params, "error_code", "errorCode", "code")
-		query.Aggregation = aggregationFromParameters(params)
-		planned, err := planErrorCountQuery(ctx, wfctx, query.TimeRange)
-		if err != nil {
-			warnings = append(warnings, "llm report query planning failed; used normalized intent parameters")
-			return nil
-		}
-		if len(planned.DeviceModels) > 0 {
-			query.DeviceModels = planned.DeviceModels
-		}
-		if planned.IDCs != nil {
-			query.IDCs = planned.IDCs
-		}
-		if planned.ErrorCode != "" {
-			query.ErrorCode = planned.ErrorCode
-		}
-		if _, err := planned.Aggregation.Duration(); err == nil {
-			query.Aggregation = planned.Aggregation
-		}
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "validate_report_parameters", func() error {
-		if len(query.DeviceModels) == 0 {
-			return fmt.Errorf("device_models is required")
-		}
-		if query.ErrorCode == "" {
-			return fmt.Errorf("error_code is required")
-		}
-		if _, err := query.Aggregation.Duration(); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "query_error_request_counts", func() error {
-		out, err := wfctx.Tools.Execute(ctx, tool.QueryErrorRequestCountsToolName, tool.QueryErrorRequestCountsInput{
-			TimeRange:    query.TimeRange,
-			DeviceModels: query.DeviceModels,
-			IDCs:         query.IDCs,
-			ErrorCode:    query.ErrorCode,
-			Aggregation:  query.Aggregation,
-		}, wfctx.ToolRecorder)
-		if err != nil {
-			return err
-		}
-		records = out.([]domain.ErrorRequestCount)
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "analyze_model_dimension", func() error {
-		report.Query = query
-		report.Records = records
-		report.TotalCount = sumErrorRequestCounts(records)
-		report.ByDeviceModel = dimensionCounts(records, func(record domain.ErrorRequestCount) string {
-			return record.DeviceModel
-		})
-		report.ByIDC = dimensionCounts(records, func(record domain.ErrorRequestCount) string {
-			return record.IDC
-		})
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
-
-	if err := runStep(&steps, "analyze_time_dimension", func() error {
-		report.ByTime = timeBucketCounts(records)
-		return nil
-	}); err != nil {
-		return Result{}, err
-	}
+	executor := NewGuidedStepExecutor(ctx, wfctx, &steps, &warnings)
 
 	summary := ""
-	if err := runStep(&steps, "generate_daily_report_summary", func() error {
-		var err error
-		summary, err = wfctx.LLM.GenerateModelErrorDailyReport(ctx, report)
-		if err != nil {
-			summary = fallbackModelErrorDailyReportMarkdown(report)
-			warnings = append(warnings, "llm daily report failed; used fallback markdown report")
+	if err := executor.Run(
+		GuidedStep{Name: "plan_report_time_range", Run: func(exec *GuidedStepExecutor) error {
+			planned, err := planReportTimeRange(exec)
+			if err != nil {
+				exec.Warn("llm time range planning failed; used normalized intent parameters")
+				return nil
+			}
+			timeRangeInput = planned
 			return nil
-		}
-		report.ReportMarkdown = summary
-		return nil
-	}); err != nil {
+		}},
+		GuidedStep{Name: "resolve_report_time_range", Run: func(exec *GuidedStepExecutor) error {
+			out, err := exec.ExecuteTool(tool.ResolveTimeRangeToolName, timeRangeInput)
+			if err != nil {
+				return err
+			}
+			query.TimeRange = out.(domain.TimeRange)
+			return nil
+		}},
+		GuidedStep{Name: "plan_error_count_query", Run: func(exec *GuidedStepExecutor) error {
+			query = reportQueryFromParameters(params, query.TimeRange)
+			planned, err := planErrorCountQuery(exec, query.TimeRange)
+			if err != nil {
+				exec.Warn("llm report query planning failed; used normalized intent parameters")
+				return nil
+			}
+			mergeReportQueryPlan(&query, planned)
+			return nil
+		}},
+		GuidedStep{Name: "validate_report_parameters", Run: func(exec *GuidedStepExecutor) error {
+			return validateReportQuery(query)
+		}},
+		GuidedStep{Name: "query_error_request_counts", Run: func(exec *GuidedStepExecutor) error {
+			out, err := exec.ExecuteTool(tool.QueryErrorRequestCountsToolName, tool.QueryErrorRequestCountsInput{
+				TimeRange:    query.TimeRange,
+				DeviceModels: query.DeviceModels,
+				IDCs:         query.IDCs,
+				ErrorCode:    query.ErrorCode,
+				Aggregation:  query.Aggregation,
+			})
+			if err != nil {
+				return err
+			}
+			records = out.([]domain.ErrorRequestCount)
+			return nil
+		}},
+		GuidedStep{Name: "analyze_model_dimension", Run: func(exec *GuidedStepExecutor) error {
+			report.Query = query
+			report.Records = records
+			report.TotalCount = sumErrorRequestCounts(records)
+			report.ByDeviceModel = dimensionCounts(records, func(record domain.ErrorRequestCount) string {
+				return record.DeviceModel
+			})
+			report.ByIDC = dimensionCounts(records, func(record domain.ErrorRequestCount) string {
+				return record.IDC
+			})
+			return nil
+		}},
+		GuidedStep{Name: "analyze_time_dimension", Run: func(exec *GuidedStepExecutor) error {
+			report.ByTime = timeBucketCounts(records)
+			return nil
+		}},
+		GuidedStep{Name: "generate_daily_report_summary", Run: func(exec *GuidedStepExecutor) error {
+			var err error
+			summary, err = wfctx.LLM.GenerateModelErrorDailyReport(ctx, report)
+			if err != nil {
+				summary = fallbackModelErrorDailyReportMarkdown(report)
+				exec.Warn("llm daily report failed; used fallback markdown report")
+				return nil
+			}
+			report.ReportMarkdown = summary
+			return nil
+		}},
+	); err != nil {
 		return Result{}, err
 	}
 	if report.ReportMarkdown == "" {
@@ -205,32 +164,19 @@ func reportTimeRangeInput(params map[string]string) tool.ResolveTimeRangeInput {
 	return tool.ResolveTimeRangeInput{Kind: "relative", Amount: 24, Unit: "hour"}
 }
 
-func planReportTimeRange(ctx context.Context, wfctx Context) (tool.ResolveTimeRangeInput, error) {
-	functionLLM, ok := wfctx.LLM.(client.FunctionCallingClient)
-	if !ok {
-		return tool.ResolveTimeRangeInput{}, fmt.Errorf("llm client does not support function calling")
-	}
-	if strings.TrimSpace(wfctx.Message) == "" {
-		return tool.ResolveTimeRangeInput{}, fmt.Errorf("original user message is required")
-	}
-	assistant, err := functionLLM.ChatWithTools(ctx, []client.ToolChatMessage{
-		{Role: "system", Content: "你是日报查询的时间参数规划器。你必须调用 resolve_time_range，只根据用户原文生成时间范围参数，不要生成时间戳。默认时间范围是最近 24 小时；最近一周使用 amount=1 unit=week。"},
-		{Role: "user", Content: wfctx.Message},
-	}, []client.FunctionTool{resolveTimeRangeFunctionTool()})
+func planReportTimeRange(exec *GuidedStepExecutor) (tool.ResolveTimeRangeInput, error) {
+	call, err := exec.PlanToolCall(GuidedToolPlanRequest{
+		SystemPrompt: "你是日报查询的时间参数规划器。你必须调用 resolve_time_range，只根据用户原文生成时间范围参数，不要生成时间戳。默认时间范围是最近 24 小时；最近一周使用 amount=1 unit=week。",
+		Tool:         tool.ResolveTimeRangeFunctionTool(),
+	})
 	if err != nil {
 		return tool.ResolveTimeRangeInput{}, err
 	}
-	for _, call := range assistant.ToolCalls {
-		if call.Function.Name != tool.ResolveTimeRangeToolName {
-			continue
-		}
-		var input tool.ResolveTimeRangeInput
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &input); err != nil {
-			return tool.ResolveTimeRangeInput{}, fmt.Errorf("decode resolve_time_range arguments: %w", err)
-		}
-		return normalizeReportTimeRangePlan(input), nil
+	input, err := DecodeGuidedToolArguments[tool.ResolveTimeRangeInput](call)
+	if err != nil {
+		return tool.ResolveTimeRangeInput{}, err
 	}
-	return tool.ResolveTimeRangeInput{}, fmt.Errorf("resolve_time_range tool call is required")
+	return normalizeReportTimeRangePlan(input), nil
 }
 
 func normalizeReportTimeRangePlan(input tool.ResolveTimeRangeInput) tool.ResolveTimeRangeInput {
@@ -243,73 +189,59 @@ func normalizeReportTimeRangePlan(input tool.ResolveTimeRangeInput) tool.Resolve
 	return input
 }
 
-func planErrorCountQuery(ctx context.Context, wfctx Context, timeRange domain.TimeRange) (ModelErrorDailyReportQuery, error) {
-	functionLLM, ok := wfctx.LLM.(client.FunctionCallingClient)
-	if !ok {
-		return ModelErrorDailyReportQuery{}, fmt.Errorf("llm client does not support function calling")
-	}
-	if strings.TrimSpace(wfctx.Message) == "" {
-		return ModelErrorDailyReportQuery{}, fmt.Errorf("original user message is required")
-	}
-	assistant, err := functionLLM.ChatWithTools(ctx, []client.ToolChatMessage{
-		{Role: "system", Content: "你是日报查询参数规划器。你必须调用 query_error_request_counts。只从用户原文提取 device_models、idcs、error_code 和 aggregation，不要生成时间戳；时间范围已经由本地 resolve_time_range 确定。数组参数必须传字符串数组。默认 aggregation_value=1 aggregation_unit=h。"},
-		{Role: "user", Content: wfctx.Message},
-		{Role: "assistant", Content: fmt.Sprintf("已解析时间范围：%s 至 %s。请继续规划 query_error_request_counts 的业务查询参数。", timeRange.Start.Format(time.RFC3339), timeRange.End.Format(time.RFC3339))},
-	}, []client.FunctionTool{queryErrorRequestCountsFunctionTool()})
+func planErrorCountQuery(exec *GuidedStepExecutor, timeRange domain.TimeRange) (ModelErrorDailyReportQuery, error) {
+	call, err := exec.PlanToolCall(GuidedToolPlanRequest{
+		SystemPrompt: "你是日报查询参数规划器。你必须调用 query_error_request_counts。只从用户原文提取 device_models、idcs、error_code 和 aggregation，不要生成时间戳；时间范围已经由本地 resolve_time_range 确定。数组参数必须传字符串数组。默认 aggregation_value=1 aggregation_unit=h。",
+		Messages: []client.ToolChatMessage{
+			{Role: "assistant", Content: fmt.Sprintf("已解析时间范围：%s 至 %s。请继续规划 query_error_request_counts 的业务查询参数。", timeRange.Start.Format(time.RFC3339), timeRange.End.Format(time.RFC3339))},
+		},
+		Tool: tool.QueryErrorRequestCountsFunctionTool(),
+	})
 	if err != nil {
 		return ModelErrorDailyReportQuery{}, err
 	}
-	for _, call := range assistant.ToolCalls {
-		if call.Function.Name != tool.QueryErrorRequestCountsToolName {
-			continue
-		}
-		return decodeReportQueryPlan(call.Function.Arguments, timeRange)
-	}
-	return ModelErrorDailyReportQuery{}, fmt.Errorf("query_error_request_counts tool call is required")
+	return decodeReportQueryPlan(call.Function.Arguments, timeRange)
 }
 
-func resolveTimeRangeFunctionTool() client.FunctionTool {
-	return client.FunctionTool{
-		Type: "function",
-		Function: client.FunctionDefinition{
-			Name:        tool.ResolveTimeRangeToolName,
-			Description: "Resolve the report time range from natural language. Do not generate timestamps.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"kind":       map[string]any{"type": "string", "enum": []string{"relative", "today", "yesterday", "absolute_range"}},
-					"amount":     map[string]any{"type": "integer", "description": "Positive lookback amount for relative ranges, for example 24 or 1."},
-					"unit":       map[string]any{"type": "string", "enum": []string{"minute", "hour", "day", "week", "m", "h", "d", "w"}},
-					"start_text": map[string]any{"type": "string", "description": "Original start time text for absolute ranges."},
-					"end_text":   map[string]any{"type": "string", "description": "Original end time text for absolute ranges."},
-				},
-				"required":             []string{"kind"},
-				"additionalProperties": false,
-			},
-		},
+func reportQueryFromParameters(params map[string]string, timeRange domain.TimeRange) ModelErrorDailyReportQuery {
+	return ModelErrorDailyReportQuery{
+		TimeRange:    timeRange,
+		DeviceModels: parameterStringList(params, "device_models", "device_model", "models", "model"),
+		IDCs:         parameterStringList(params, "idcs", "idc"),
+		ErrorCode:    firstNonEmpty(params, "error_code", "errorCode", "code"),
+		Aggregation:  aggregationFromParameters(params),
 	}
 }
 
-func queryErrorRequestCountsFunctionTool() client.FunctionTool {
-	return client.FunctionTool{
-		Type: "function",
-		Function: client.FunctionDefinition{
-			Name:        tool.QueryErrorRequestCountsToolName,
-			Description: "Plan request error count query parameters. Time range is provided by the runtime and must not be generated.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"device_models":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Device model list, for example iphone-15."},
-					"idcs":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "IDC list, optional."},
-					"error_code":        map[string]any{"type": "string", "description": "Error code from user input, for example E500."},
-					"aggregation_value": map[string]any{"type": "integer", "description": "Bucket size value, default 1."},
-					"aggregation_unit":  map[string]any{"type": "string", "enum": []string{"m", "h", "d"}, "description": "Bucket size unit, default h."},
-				},
-				"required":             []string{"device_models", "error_code"},
-				"additionalProperties": false,
-			},
-		},
+func mergeReportQueryPlan(query *ModelErrorDailyReportQuery, planned ModelErrorDailyReportQuery) {
+	if query == nil {
+		return
 	}
+	if len(planned.DeviceModels) > 0 {
+		query.DeviceModels = planned.DeviceModels
+	}
+	if planned.IDCs != nil {
+		query.IDCs = planned.IDCs
+	}
+	if planned.ErrorCode != "" {
+		query.ErrorCode = planned.ErrorCode
+	}
+	if _, err := planned.Aggregation.Duration(); err == nil {
+		query.Aggregation = planned.Aggregation
+	}
+}
+
+func validateReportQuery(query ModelErrorDailyReportQuery) error {
+	if len(query.DeviceModels) == 0 {
+		return fmt.Errorf("device_models is required")
+	}
+	if query.ErrorCode == "" {
+		return fmt.Errorf("error_code is required")
+	}
+	if _, err := query.Aggregation.Duration(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func decodeReportQueryPlan(arguments string, timeRange domain.TimeRange) (ModelErrorDailyReportQuery, error) {

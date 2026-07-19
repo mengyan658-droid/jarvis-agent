@@ -4,7 +4,9 @@
 
 ## 架构
 
-- `AgentRuntime`：只负责意图解析、工作流路由和调度；未知 intent 会兜底进入 tool loop。
+- `AgentRuntime`：只负责 Skill 路由、参数兜底规范化和执行调度；未知 intent 会兜底进入 tool loop。
+- `Skill`：通过 `skills/*/SKILL.md` 声明能力、触发提示、执行器、参数、工具权限和输出约束。
+- `SkillExecutor`：根据 Skill 的 `executor` 选择不同处理方式，当前支持固定 `workflow` 和 `tool_loop`。
 - `Workflow`：负责编排业务步骤，当前实现固定 Workflow 和原生 function calling tool loop。
 - `Tool`：统一封装外部服务调用，并记录 tool call。
 - `Client`：定义外部服务接口，并提供 Mock 实现。
@@ -15,16 +17,29 @@
 ```text
 HTTP API
   -> AgentRuntime
-    -> LLM ParseIntent
-    -> WorkflowRegistry
-      -> 固定 Workflow
+    -> SkillRouter
+      -> LLM select_skill
+      -> ParseIntent fallback
+    -> SkillExecutor
+      -> executor=workflow
+        -> WorkflowRegistry -> 固定 Workflow
         -> ToolRegistry -> Tool -> Client
         -> FaultAnalyzer
-      -> Tool Loop Workflow
+      -> executor=tool_loop
+        -> Tool Loop Workflow
         -> LLM tools/tool_calls loop
         -> ToolPolicy/Normalizer
         -> ToolRegistry -> Tool -> Client
         -> FaultAnalyzer
+```
+
+当前已有 Skill：
+
+```text
+query_faulty_hosts           executor=workflow
+diagnose_host                executor=workflow
+tool_loop_investigate_host   executor=tool_loop
+model_error_daily_report     executor=guided_steps
 ```
 
 ## 已实现场景
@@ -32,6 +47,7 @@ HTTP API
 - 查询故障机：固定 Workflow，根据区域、环境和最近一小时窗口查询主机，拉取指标、告警、变更、CMDB 信息，执行故障评分并默认只返回故障机器。
 - 诊断单台机器：固定 Workflow，提取 `host-001` 形式的 Host ID，查询相关证据后生成单机诊断。
 - 排查单台机器根因：原生 function calling tool loop，由模型提出 `tool_calls`，本地规范化、去重、执行工具，并用 `FaultAnalyzer` 做确定性评分。
+- 机型错误码数量日报：`guided_steps`，模型根据用户输入规划时间范围和查询参数，本地执行查询、统计事实并生成 Markdown 日报。
 
 ## Mock 数据
 
@@ -40,6 +56,62 @@ HTTP API
 - `host-003`：华北 staging，不可达且健康检查失败，判定为 critical。
 - `host-004`：华东 production，CPU 87%，有多个 warning 告警。
 - `host-005`：华南 production，只有近期普通变更，不判定为故障。
+- 请求错误数量样本：按 `device_model`、`idc`、`error_code` 和时间戳保存，用于 `query_error_request_counts` 按时间范围和聚合窗口查询错误数量。
+
+## 请求错误数量查询
+
+底层已提供 Mock 查询能力，供后续日报 Skill 使用。
+
+Client 接口：
+
+```text
+RequestCountClient.QueryErrorRequestCounts
+```
+
+Tool：
+
+```text
+query_error_request_counts
+```
+
+查询条件：
+
+```text
+time_range       必填，使用已解析的 domain.TimeRange
+device_models    可选，string 数组
+idcs             可选，string 数组
+error_code       可选，错误码
+aggregation      必填，例如 value=1 unit=h，表示按 1 小时聚合
+```
+
+返回结果按时间桶、机型、IDC 和错误码聚合：
+
+```json
+{
+  "bucket_start": "2026-07-20T10:00:00+08:00",
+  "bucket_end": "2026-07-20T11:00:00+08:00",
+  "device_model": "iphone-15",
+  "idc": "shanghai-a",
+  "error_code": "E500",
+  "count": 30
+}
+```
+
+日报 Skill 会在结构化统计结果上生成 Markdown 报告，前端可以优先渲染：
+
+```text
+data.results.report_markdown
+```
+
+同时继续使用结构化字段绘制图表：
+
+```text
+data.results.total_count        总错误数
+data.results.by_device_model    机型维度柱状图
+data.results.by_time            时间趋势折线图
+data.results.by_idc             IDC 维度柱状图
+data.results.records            明细表格
+```
 
 ## 配置
 
@@ -256,17 +328,31 @@ curl -s -X POST http://localhost:8080/api/v1/agent/query \
 
 这条请求会路由到 `tool_loop_investigate_host`。
 
+生成机型错误码数量日报：
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/agent/query \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-ID: u-001' \
+  -H 'X-User-Role: sre' \
+  -H 'X-Session-ID: s-001' \
+  -d '{"message":"生成最近24小时 iphone-15 错误码 E500 的数量日报"}'
+```
+
+这条请求会路由到 `model_error_daily_report`。
+
 Loop 流程：
 
 ```text
-1. Runtime 解析 intent，路由到 tool_loop_investigate_host。
-2. Workflow 将当前阶段允许的 tools 传给 LLM。
-3. LLM 返回 tool_calls。
-4. 本地规范化参数并生成 canonical key。
-5. 本地策略判断是否允许执行、是否重复、是否缺少前置证据。
-6. 允许执行时通过 ToolRegistry 调用 Tool。
-7. Tool observation 以 role=tool 回传给 LLM。
-8. assess_fault 完成后不再开放 tools，生成最终诊断摘要。
+1. Runtime 通过 select_skill 选择 tool_loop_investigate_host Skill。
+2. SkillExecutor 根据 executor=tool_loop 进入 tool loop 处理分支。
+3. Tool Loop Workflow 将当前阶段允许的 tools 传给 LLM。
+4. LLM 返回 tool_calls。
+5. 本地规范化参数并生成 canonical key。
+6. 本地策略判断是否允许执行、是否重复、是否缺少前置证据。
+7. 允许执行时通过 ToolRegistry 调用 Tool。
+8. Tool observation 以 role=tool 回传给 LLM。
+9. assess_fault 完成后不再开放 tools，生成最终诊断摘要。
 ```
 
 Function calling 交互方式：

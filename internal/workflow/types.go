@@ -29,6 +29,7 @@ type Result struct {
 
 type Context struct {
 	Intent       client.Intent
+	Message      string
 	Tools        *tool.Registry
 	ToolRecorder *tool.Recorder
 	Analyzer     *domain.FaultAnalyzer
@@ -55,6 +56,14 @@ func NewRegistry(workflows ...Workflow) *Registry {
 
 func (r *Registry) Register(wf Workflow) {
 	r.workflows[wf.Name()] = wf
+}
+
+func (r *Registry) Has(name string) bool {
+	if r == nil {
+		return false
+	}
+	_, ok := r.workflows[name]
+	return ok
 }
 
 func (r *Registry) Get(name string) (Workflow, error) {

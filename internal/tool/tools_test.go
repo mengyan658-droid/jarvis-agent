@@ -10,6 +10,7 @@ import (
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/client/change"
 	"jarvis-agent/internal/client/jarvis"
+	"jarvis-agent/internal/client/requestcount"
 	"jarvis-agent/internal/domain"
 )
 
@@ -80,5 +81,40 @@ func TestQueryChangesToolUsesResolvedTimeRange(t *testing.T) {
 	changes := out.([]domain.ChangeRecord)
 	if len(changes) != 1 || changes[0].ID != "chg-in-range" {
 		t.Fatalf("unexpected changes: %+v", changes)
+	}
+}
+
+func TestQueryErrorRequestCountsTool(t *testing.T) {
+	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	store := &client.MockStore{
+		ErrorRequestCounts: []domain.ErrorRequestCountSample{
+			{Timestamp: base.Add(10 * time.Minute), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 5},
+			{Timestamp: base.Add(20 * time.Minute), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 6},
+		},
+	}
+	out, err := QueryErrorRequestCountsTool{Client: requestcount.NewMockClient(store)}.Execute(context.Background(), QueryErrorRequestCountsInput{
+		TimeRange:    domain.NewTimeRange(base, base.Add(time.Hour), base.Add(time.Hour), "UTC", "test", false),
+		DeviceModels: []string{"iphone-15"},
+		IDCs:         []string{"shanghai-a"},
+		ErrorCode:    "E500",
+		Aggregation:  domain.TimeAggregation{Value: 1, Unit: "h"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := out.([]domain.ErrorRequestCount)
+	if len(counts) != 1 || counts[0].Count != 11 {
+		t.Fatalf("unexpected counts: %+v", counts)
+	}
+}
+
+func TestQueryErrorRequestCountsToolValidatesAggregation(t *testing.T) {
+	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	_, err := QueryErrorRequestCountsTool{Client: requestcount.NewMockClient(&client.MockStore{})}.Execute(context.Background(), QueryErrorRequestCountsInput{
+		TimeRange:   domain.NewTimeRange(base, base.Add(time.Hour), base.Add(time.Hour), "UTC", "test", false),
+		Aggregation: domain.TimeAggregation{Value: 0, Unit: "h"},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
 	}
 }

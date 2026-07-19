@@ -26,6 +26,18 @@ type ChangeClient interface {
 	QueryRecentChanges(ctx context.Context, hostID string, timeRange domain.TimeRange) ([]domain.ChangeRecord, error)
 }
 
+type ErrorRequestCountQuery struct {
+	TimeRange    domain.TimeRange
+	DeviceModels []string
+	IDCs         []string
+	ErrorCode    string
+	Aggregation  domain.TimeAggregation
+}
+
+type RequestCountClient interface {
+	QueryErrorRequestCounts(ctx context.Context, query ErrorRequestCountQuery) ([]domain.ErrorRequestCount, error)
+}
+
 type CMDBClient interface {
 	QueryHostMetadata(ctx context.Context, hostID string) (map[string]string, error)
 }
@@ -39,6 +51,7 @@ type LLMClient interface {
 	ParseIntent(ctx context.Context, message string) (Intent, error)
 	GenerateFaultSummary(ctx context.Context, assessments []domain.FaultAssessment) (string, error)
 	GenerateHostDiagnosis(ctx context.Context, assessment domain.FaultAssessment) (string, error)
+	GenerateModelErrorDailyReport(ctx context.Context, facts any) (string, error)
 }
 
 type FunctionCallingClient interface {

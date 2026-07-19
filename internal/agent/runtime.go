@@ -28,6 +28,7 @@ type Runtime struct {
 type QueryResult struct {
 	RequestID  string            `json:"request_id"`
 	Intent     string            `json:"intent"`
+	Skill      string            `json:"skill,omitempty"`
 	Workflow   string            `json:"workflow"`
 	Summary    string            `json:"summary"`
 	Results    any               `json:"results"`
@@ -59,44 +60,19 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 			intent.Parameters["since"] = since
 		}
 	}
-	routeName := intent.Name
-	if spec, ok := r.skillForIntent(routeName); ok {
-		routeName = spec.Workflow
-		intent.Name = spec.Workflow
-	}
-	if routeName == "" || routeName == "unknown" {
-		routeWarnings = append(routeWarnings, "intent is unknown; routed to tool loop workflow")
-		routeName = workflow.ToolLoopInvestigateHostWorkflowName
-	}
-	wf, err := r.Workflows.Get(routeName)
-	if err != nil {
-		routeWarnings = append(routeWarnings, "intent workflow not found; routed to tool loop workflow")
-		routeName = workflow.ToolLoopInvestigateHostWorkflowName
-		wf, err = r.Workflows.Get(routeName)
-		if err != nil {
-			return QueryResult{}, err
-		}
-	}
-	if routeName == workflow.ToolLoopInvestigateHostWorkflowName {
-		intent.Name = routeName
-		if intent.Parameters == nil {
-			intent.Parameters = map[string]string{}
-		}
-		if intent.Parameters["host_id"] == "" {
-			if hostID := extractHostID(message); hostID != "" {
-				intent.Parameters["host_id"] = hostID
-			}
-		}
-	}
 	recorder := &tool.Recorder{}
-	result, err := wf.Run(ctx, workflow.Context{
-		Intent:       intent,
-		Tools:        r.Tools,
-		ToolRecorder: recorder,
-		Analyzer:     r.Analyzer,
-		LLM:          r.LLM,
-		MaxSteps:     r.MaxSteps,
-	})
+	selectedSkill := ""
+	var result workflow.Result
+	if spec, ok := r.skillForIntent(intent.Name); ok {
+		selectedSkill = spec.Name
+		var executionWarnings []string
+		result, executionWarnings, err = r.executeSkill(ctx, spec, intent, message, recorder)
+		routeWarnings = append(routeWarnings, executionWarnings...)
+	} else {
+		var executionWarnings []string
+		result, executionWarnings, err = r.executeWorkflowFallback(ctx, intent, message, recorder)
+		routeWarnings = append(routeWarnings, executionWarnings...)
+	}
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -107,6 +83,7 @@ func (r *Runtime) Query(ctx context.Context, requestID, message string) (QueryRe
 	return QueryResult{
 		RequestID:  requestID,
 		Intent:     result.Intent,
+		Skill:      selectedSkill,
 		Workflow:   result.Workflow,
 		Summary:    result.Summary,
 		Results:    result.Results,

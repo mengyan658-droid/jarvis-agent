@@ -36,6 +36,7 @@ type ErrorData struct {
 type AgentQueryData struct {
 	RequestID      string `json:"request_id"`
 	Intent         string `json:"intent"`
+	Skill          string `json:"skill,omitempty"`
 	Workflow       string `json:"workflow"`
 	Summary        string `json:"summary"`
 	Results        any    `json:"results"`

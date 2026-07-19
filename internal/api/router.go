@@ -69,6 +69,7 @@ func (h *Handler) query(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, r, AgentQueryData{
 		RequestID:      result.RequestID,
 		Intent:         result.Intent,
+		Skill:          result.Skill,
 		Workflow:       result.Workflow,
 		Summary:        result.Summary,
 		Results:        result.Results,

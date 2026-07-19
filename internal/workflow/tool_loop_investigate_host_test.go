@@ -103,6 +103,10 @@ func (l *duplicateToolCallLLM) GenerateHostDiagnosis(ctx context.Context, assess
 	return fmt.Sprintf("%s score=%d", assessment.HostID, assessment.Score), nil
 }
 
+func (l *duplicateToolCallLLM) GenerateModelErrorDailyReport(ctx context.Context, facts any) (string, error) {
+	return "", nil
+}
+
 func (l *duplicateToolCallLLM) ChatWithTools(ctx context.Context, messages []client.ToolChatMessage, tools []client.FunctionTool) (client.ToolChatMessage, error) {
 	l.round++
 	if l.round == 1 {

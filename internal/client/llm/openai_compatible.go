@@ -99,6 +99,17 @@ func (c *OpenAICompatibleClient) GenerateHostDiagnosis(ctx context.Context, asse
 	}, 0.2)
 }
 
+func (c *OpenAICompatibleClient) GenerateModelErrorDailyReport(ctx context.Context, facts any) (string, error) {
+	payload, err := json.Marshal(facts)
+	if err != nil {
+		return "", err
+	}
+	return c.chat(ctx, "generate_model_error_daily_report", []client.ToolChatMessage{
+		{Role: "system", Content: modelErrorDailyReportPrompt()},
+		{Role: "user", Content: string(payload)},
+	}, 0.2)
+}
+
 func (c *OpenAICompatibleClient) ChatWithTools(ctx context.Context, messages []client.ToolChatMessage, tools []client.FunctionTool) (client.ToolChatMessage, error) {
 	return c.chatCompletion(ctx, "function_calling", messages, tools, "auto", 0)
 }
@@ -197,12 +208,17 @@ func (c *OpenAICompatibleClient) chatCompletionsURL() string {
 func intentSystemPrompt() string {
 	return `你是 Jarvis Agent 的意图解析器，只能输出 JSON，不要输出 Markdown。
 输出格式：
-{"name":"query_faulty_hosts|diagnose_host|tool_loop_investigate_host|unknown","parameters":{"region":"","environment":"","since":"","start_text":"","end_text":"","host_id":""}}
+{"name":"query_faulty_hosts|diagnose_host|tool_loop_investigate_host|model_error_daily_report|unknown","parameters":{"region":"","environment":"","since":"","start_text":"","end_text":"","host_id":"","device_models":"","idcs":"","error_code":"","aggregation_value":"","aggregation_unit":""}}
 
 规则：
 - “故障机”“异常机器” => query_faulty_hosts
 - “诊断 host-001”“分析 host-001” => diagnose_host
 - “排查 host-001”“根因 host-001” => tool_loop_investigate_host
+- “日报”“错误码”“机型” => model_error_daily_report
+- model_error_daily_report 必须提取 device_models，例如 iphone-15,iphone-14；多个值用英文逗号分隔
+- model_error_daily_report 必须提取 error_code，例如 E500
+- model_error_daily_report 可提取 idcs，例如 shanghai-a,beijing-a；多个值用英文逗号分隔
+- model_error_daily_report 默认 aggregation_value=1, aggregation_unit=h
 - “华东” => region=east-china
 - “华北” => region=north-china
 - “华南” => region=south-china
@@ -218,6 +234,17 @@ func intentSystemPrompt() string {
 - 提取 host-001 这类 Host ID 到 host_id
 - 不要输出具体时间戳，时间戳由 resolve_time_range 工具在本地计算
 - 无法识别时 name=unknown`
+}
+
+func modelErrorDailyReportPrompt() string {
+	return `你是基础设施运维日报生成器。输入是后端已经计算好的结构化事实 JSON，你只能基于输入生成 Markdown 报告。
+要求：
+- 只输出 Markdown，不要输出 JSON，不要包裹代码块。
+- 必须使用这些标题：# 机型错误码数量日报、## 概览、## 查询条件、## 机型维度分析、## 时间趋势分析、## IDC 维度分析、## 明细数据、## 结论。
+- 数字、错误码、机型、IDC、时间范围必须以输入为准，不能编造。
+- 时间趋势分析要说明峰值时间段、低谷时间段和整体趋势；如果数据不足，要明确说明数据不足。
+- 明细数据使用 Markdown 表格，最多展示 20 行。
+- 如果 total_count=0，明确说明查询范围内无匹配错误请求。`
 }
 
 func extractJSONObject(content string) string {

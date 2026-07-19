@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"jarvis-agent/internal/client"
 	"jarvis-agent/internal/domain"
@@ -44,6 +45,20 @@ func parseMockIntent(message string) client.Intent {
 			name = "diagnose_host"
 			params["host_id"] = id
 		}
+	}
+	if strings.Contains(message, "日报") || (strings.Contains(message, "错误码") && strings.Contains(message, "机型")) {
+		name = "model_error_daily_report"
+		if models := extractDeviceModels(message); len(models) > 0 {
+			params["device_models"] = strings.Join(models, ",")
+		}
+		if idcs := extractIDCs(message); len(idcs) > 0 {
+			params["idcs"] = strings.Join(idcs, ",")
+		}
+		if code := extractErrorCode(message); code != "" {
+			params["error_code"] = code
+		}
+		params["aggregation_value"] = "1"
+		params["aggregation_unit"] = "h"
 	}
 	if strings.Contains(message, "华东") {
 		params["region"] = "east-china"
@@ -83,12 +98,33 @@ func (c *MockClient) GenerateHostDiagnosis(ctx context.Context, assessment domai
 	return fmt.Sprintf("%s 评分 %d，等级 %s，故障状态为 %t。", assessment.HostID, assessment.Score, assessment.Level, assessment.IsFaulty), nil
 }
 
+func (c *MockClient) GenerateModelErrorDailyReport(ctx context.Context, facts any) (string, error) {
+	if err := c.Behavior.Before(ctx); err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(facts)
+	if err != nil {
+		return "", err
+	}
+	var report modelErrorDailyReportFacts
+	if err := json.Unmarshal(payload, &report); err != nil {
+		return "", err
+	}
+	return formatMockModelErrorDailyReport(report), nil
+}
+
 func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolChatMessage, tools []client.FunctionTool) (client.ToolChatMessage, error) {
 	if err := c.Behavior.Before(ctx); err != nil {
 		return client.ToolChatMessage{}, err
 	}
 	if isSelectSkillRequest(tools) {
 		return mockSelectSkill(messages), nil
+	}
+	if hasFunctionTool(tools, "resolve_time_range") {
+		return mockResolveTimeRange(messages), nil
+	}
+	if hasFunctionTool(tools, "query_error_request_counts") {
+		return mockQueryErrorRequestCounts(messages), nil
 	}
 	hostID := "host-001"
 	for _, msg := range messages {
@@ -131,13 +167,225 @@ func (c *MockClient) ChatWithTools(ctx context.Context, messages []client.ToolCh
 	}, nil
 }
 
+type modelErrorDailyReportFacts struct {
+	Query struct {
+		TimeRange struct {
+			Start time.Time `json:"start_time"`
+			End   time.Time `json:"end_time"`
+		} `json:"time_range"`
+		DeviceModels []string               `json:"device_models"`
+		IDCs         []string               `json:"idcs"`
+		ErrorCode    string                 `json:"error_code"`
+		Aggregation  domain.TimeAggregation `json:"aggregation"`
+	} `json:"query"`
+	TotalCount    int `json:"total_count"`
+	ByDeviceModel []struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	} `json:"by_device_model"`
+	ByIDC []struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	} `json:"by_idc"`
+	ByTime []struct {
+		BucketStart time.Time `json:"bucket_start"`
+		BucketEnd   time.Time `json:"bucket_end"`
+		Count       int       `json:"count"`
+	} `json:"by_time"`
+}
+
+func formatMockModelErrorDailyReport(report modelErrorDailyReportFacts) string {
+	peak, low := timeBucketExtremes(report.ByTime)
+	models := strings.Join(report.Query.DeviceModels, "、")
+	if models == "" {
+		models = "-"
+	}
+	idcs := strings.Join(report.Query.IDCs, "、")
+	if idcs == "" {
+		idcs = "全部"
+	}
+	var b strings.Builder
+	b.WriteString("# 机型错误码数量日报\n\n")
+	b.WriteString("## 概览\n\n")
+	b.WriteString(fmt.Sprintf("- 总错误数：%d\n", report.TotalCount))
+	b.WriteString(fmt.Sprintf("- 错误码：%s\n", report.Query.ErrorCode))
+	if len(report.ByDeviceModel) > 0 {
+		b.WriteString(fmt.Sprintf("- 主要机型：%s（%d 次）\n", report.ByDeviceModel[0].Name, report.ByDeviceModel[0].Count))
+	}
+	if peak.Count > 0 {
+		b.WriteString(fmt.Sprintf("- 峰值时间段：%s - %s（%d 次）\n", peak.BucketStart.Format("2006-01-02 15:04"), peak.BucketEnd.Format("15:04"), peak.Count))
+	}
+	b.WriteString("\n## 查询条件\n\n")
+	b.WriteString(fmt.Sprintf("- 时间范围：%s 至 %s\n", report.Query.TimeRange.Start.Format("2006-01-02 15:04"), report.Query.TimeRange.End.Format("2006-01-02 15:04")))
+	b.WriteString(fmt.Sprintf("- 机型：%s\n", models))
+	b.WriteString(fmt.Sprintf("- IDC：%s\n", idcs))
+	b.WriteString(fmt.Sprintf("- 聚合粒度：%d%s\n", report.Query.Aggregation.Value, report.Query.Aggregation.Unit))
+	b.WriteString("\n## 机型维度分析\n\n")
+	writeDimensionMarkdown(&b, report.ByDeviceModel)
+	b.WriteString("\n## 时间趋势分析\n\n")
+	if len(report.ByTime) == 0 {
+		b.WriteString("查询范围内没有匹配数据，无法形成时间趋势。\n")
+	} else {
+		b.WriteString(fmt.Sprintf("峰值出现在 %s 至 %s，共 %d 次；低谷出现在 %s 至 %s，共 %d 次。\n",
+			peak.BucketStart.Format("2006-01-02 15:04"), peak.BucketEnd.Format("15:04"), peak.Count,
+			low.BucketStart.Format("2006-01-02 15:04"), low.BucketEnd.Format("15:04"), low.Count))
+	}
+	b.WriteString("\n## IDC 维度分析\n\n")
+	writeDimensionMarkdown(&b, report.ByIDC)
+	b.WriteString("\n## 明细数据\n\n")
+	writeTimeMarkdown(&b, report.ByTime)
+	b.WriteString("\n## 结论\n\n")
+	if report.TotalCount == 0 {
+		b.WriteString("查询范围内未发现匹配错误请求。\n")
+	} else {
+		b.WriteString("错误请求主要集中在高计数机型和峰值时间段，建议结合该时间段的发布、流量和服务端日志继续排查。\n")
+	}
+	return b.String()
+}
+
+func timeBucketExtremes(buckets []struct {
+	BucketStart time.Time `json:"bucket_start"`
+	BucketEnd   time.Time `json:"bucket_end"`
+	Count       int       `json:"count"`
+}) (peak, low struct {
+	BucketStart time.Time `json:"bucket_start"`
+	BucketEnd   time.Time `json:"bucket_end"`
+	Count       int       `json:"count"`
+}) {
+	if len(buckets) == 0 {
+		return peak, low
+	}
+	peak = buckets[0]
+	low = buckets[0]
+	for _, bucket := range buckets[1:] {
+		if bucket.Count > peak.Count {
+			peak = bucket
+		}
+		if bucket.Count < low.Count {
+			low = bucket
+		}
+	}
+	return peak, low
+}
+
+func writeDimensionMarkdown(b *strings.Builder, rows []struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}) {
+	if len(rows) == 0 {
+		b.WriteString("无匹配数据。\n")
+		return
+	}
+	b.WriteString("| 名称 | 错误数 |\n| --- | ---: |\n")
+	for _, row := range rows {
+		b.WriteString(fmt.Sprintf("| %s | %d |\n", row.Name, row.Count))
+	}
+}
+
+func writeTimeMarkdown(b *strings.Builder, rows []struct {
+	BucketStart time.Time `json:"bucket_start"`
+	BucketEnd   time.Time `json:"bucket_end"`
+	Count       int       `json:"count"`
+}) {
+	if len(rows) == 0 {
+		b.WriteString("无明细数据。\n")
+		return
+	}
+	b.WriteString("| 时间段 | 错误数 |\n| --- | ---: |\n")
+	limit := len(rows)
+	if limit > 20 {
+		limit = 20
+	}
+	for _, row := range rows[:limit] {
+		b.WriteString(fmt.Sprintf("| %s - %s | %d |\n", row.BucketStart.Format("2006-01-02 15:04"), row.BucketEnd.Format("15:04"), row.Count))
+	}
+}
+
 func isSelectSkillRequest(tools []client.FunctionTool) bool {
+	return hasFunctionTool(tools, "select_skill")
+}
+
+func hasFunctionTool(tools []client.FunctionTool, name string) bool {
 	for _, tool := range tools {
-		if tool.Function.Name == "select_skill" {
+		if tool.Function.Name == name {
 			return true
 		}
 	}
 	return false
+}
+
+func mockResolveTimeRange(messages []client.ToolChatMessage) client.ToolChatMessage {
+	userMessage := latestUserMessage(messages)
+	payload := map[string]any{"kind": "relative", "amount": 24, "unit": "hour"}
+	if since := parseSince(userMessage); since != "" {
+		if amount, unit, ok := parseCompactLookback(since); ok {
+			payload["amount"] = amount
+			payload["unit"] = unit
+		}
+		if since == "today" {
+			payload = map[string]any{"kind": "today"}
+		}
+		if since == "yesterday" {
+			payload = map[string]any{"kind": "yesterday"}
+		}
+	}
+	data, _ := json.Marshal(payload)
+	return client.ToolChatMessage{
+		Role: "assistant",
+		ToolCalls: []client.ToolCall{{
+			ID:   "call-resolve-time-range",
+			Type: "function",
+			Function: client.FunctionCall{
+				Name:      "resolve_time_range",
+				Arguments: string(data),
+			},
+		}},
+	}
+}
+
+func mockQueryErrorRequestCounts(messages []client.ToolChatMessage) client.ToolChatMessage {
+	userMessage := latestUserMessage(messages)
+	payload := map[string]any{
+		"device_models":     extractDeviceModels(userMessage),
+		"idcs":              extractIDCs(userMessage),
+		"error_code":        extractErrorCode(userMessage),
+		"aggregation_value": 1,
+		"aggregation_unit":  "h",
+	}
+	data, _ := json.Marshal(payload)
+	return client.ToolChatMessage{
+		Role: "assistant",
+		ToolCalls: []client.ToolCall{{
+			ID:   "call-query-error-request-counts",
+			Type: "function",
+			Function: client.FunctionCall{
+				Name:      "query_error_request_counts",
+				Arguments: string(data),
+			},
+		}},
+	}
+}
+
+func latestUserMessage(messages []client.ToolChatMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
+		}
+	}
+	return ""
+}
+
+func parseCompactLookback(since string) (int, string, bool) {
+	matches := regexp.MustCompile(`(?i)^(\d+)([mhdw])$`).FindStringSubmatch(strings.TrimSpace(since))
+	if len(matches) != 3 {
+		return 0, "", false
+	}
+	amount, err := strconv.Atoi(matches[1])
+	if err != nil || amount <= 0 {
+		return 0, "", false
+	}
+	unit := map[string]string{"m": "minute", "h": "hour", "d": "day", "w": "week"}[strings.ToLower(matches[2])]
+	return amount, unit, true
 }
 
 func mockSelectSkill(messages []client.ToolChatMessage) client.ToolChatMessage {
@@ -269,4 +517,52 @@ func parseSmallChineseNumber(s string) (int, bool) {
 func extractHostID(message string) string {
 	re := regexp.MustCompile(`host-\d{3}`)
 	return re.FindString(message)
+}
+
+func extractDeviceModels(message string) []string {
+	matches := regexp.MustCompile(`(?i)(iphone[-\s]?\d+|xiaomi[-\s]?\d+|huawei[-\s]?[a-z0-9]+|oppo[-\s]?[a-z0-9]+|vivo[-\s]?[a-z0-9]+)`).FindAllString(message, -1)
+	out := make([]string, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		model := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(match), " ", "-"))
+		if model == "" || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out = append(out, model)
+	}
+	return out
+}
+
+func extractIDCs(message string) []string {
+	matches := regexp.MustCompile(`(?i)(shanghai-a|beijing-a|shenzhen-a|上海a|北京a|深圳a)`).FindAllString(message, -1)
+	out := make([]string, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		idc := strings.ToLower(strings.TrimSpace(match))
+		switch idc {
+		case "上海a":
+			idc = "shanghai-a"
+		case "北京a":
+			idc = "beijing-a"
+		case "深圳a":
+			idc = "shenzhen-a"
+		}
+		if idc == "" || seen[idc] {
+			continue
+		}
+		seen[idc] = true
+		out = append(out, idc)
+	}
+	return out
+}
+
+func extractErrorCode(message string) string {
+	matches := regexp.MustCompile(`(?i)(?:错误码|error\s*code|code)\s*(?:是|为|=|:|：)?\s*([A-Z][A-Z0-9_-]+)|\b(E[A-Z0-9_-]+)\b`).FindStringSubmatch(message)
+	for _, match := range matches[1:] {
+		if strings.TrimSpace(match) != "" {
+			return strings.ToUpper(strings.TrimSpace(match))
+		}
+	}
+	return ""
 }

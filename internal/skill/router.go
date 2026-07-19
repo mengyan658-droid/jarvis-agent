@@ -48,18 +48,33 @@ func RouterSystemPrompt(registry *Registry) string {
 	var b strings.Builder
 	b.WriteString("你是 Jarvis Agent 的 Skill Router。你必须根据用户输入选择一个 skill，并调用 select_skill。\n")
 	b.WriteString("不要执行业务查询，不要调用业务工具，不要生成最终答案。\n")
-	b.WriteString("参数规则：不要生成时间戳；相对时间使用 since，例如 5h、30m、2d、1w；明确起止时间使用 start_text/end_text 原文。\n")
+	b.WriteString("参数规则：不要生成时间戳；相对时间使用 since，例如 5h、30m、2d、1w；明确起止时间使用 start_text/end_text 原文；数组参数使用英文逗号分隔字符串。\n")
 	b.WriteString("可用 skills：\n")
 	for _, summary := range registry.Summaries() {
 		b.WriteString("- name: ")
 		b.WriteString(summary.Name)
 		b.WriteString("\n  description: ")
 		b.WriteString(summary.Description)
-		b.WriteString("\n  workflow: ")
-		b.WriteString(summary.Workflow)
+		b.WriteString("\n  executor: ")
+		b.WriteString(summary.Executor)
+		if summary.Workflow != "" {
+			b.WriteString("\n  workflow: ")
+			b.WriteString(summary.Workflow)
+		}
 		if len(summary.Intents) > 0 {
 			b.WriteString("\n  intents: ")
 			b.WriteString(strings.Join(summary.Intents, ", "))
+		}
+		if len(summary.Triggers) > 0 {
+			b.WriteString("\n  triggers: ")
+			b.WriteString(strings.Join(summary.Triggers, ", "))
+		}
+		if summary.ReadOnly {
+			b.WriteString("\n  read_only: true")
+		}
+		if summary.OutputPolicy != "" {
+			b.WriteString("\n  output_policy: ")
+			b.WriteString(summary.OutputPolicy)
 		}
 		b.WriteString("\n")
 	}

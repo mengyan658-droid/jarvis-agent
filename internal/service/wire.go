@@ -12,6 +12,7 @@ import (
 	"jarvis-agent/internal/client/jarvis"
 	"jarvis-agent/internal/client/llm"
 	"jarvis-agent/internal/client/monitor"
+	"jarvis-agent/internal/client/requestcount"
 	"jarvis-agent/internal/config"
 	"jarvis-agent/internal/domain"
 	"jarvis-agent/internal/skill"
@@ -25,6 +26,7 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 	monitorClient := monitor.NewMockClient(store)
 	changeClient := change.NewMockClient(store)
 	cmdbClient := cmdb.NewMockClient(store)
+	requestCountClient := requestcount.NewMockClient(store)
 	llmClient := newLLMClient(cfg, logger)
 
 	tools := tool.NewRegistry(
@@ -34,20 +36,25 @@ func NewRuntime(cfg config.Config, logger *slog.Logger) *agent.Runtime {
 		tool.QueryAlarmsTool{Client: monitorClient},
 		tool.QueryChangesTool{Client: changeClient},
 		tool.QueryCMDBTool{Client: cmdbClient},
+		tool.QueryErrorRequestCountsTool{Client: requestCountClient},
 		tool.ResolveTimeRangeTool{},
 	).WithLogger(logger)
 	if path := os.Getenv("TIME_TEST_LOG"); path != "" {
 		tools.WithTimeTestLogPath(path)
 	}
-	skills := loadSkills(logger)
-	if err := skills.ValidateTools(tools.Has); err != nil {
-		logger.Warn("skill tool validation failed", "error", err)
-	}
 	workflows := workflow.NewRegistry(
 		workflow.QueryFaultyHostsWorkflow{},
 		workflow.DiagnoseHostWorkflow{},
 		workflow.ToolLoopInvestigateHostWorkflow{},
+		workflow.ModelErrorDailyReportWorkflow{},
 	)
+	skills := loadSkills(logger)
+	if err := skills.ValidateTools(tools.Has); err != nil {
+		logger.Warn("skill tool validation failed", "error", err)
+	}
+	if err := skills.ValidateExecutionTargets(workflows.Has); err != nil {
+		logger.Warn("skill execution target validation failed", "error", err)
+	}
 	return &agent.Runtime{
 		LLM:          llmClient,
 		Tools:        tools,

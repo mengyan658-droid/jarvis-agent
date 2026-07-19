@@ -7,11 +7,12 @@ import (
 )
 
 type MockStore struct {
-	Hosts   map[string]domain.Host
-	Metrics map[string]domain.HostMetrics
-	Alarms  map[string][]domain.Alarm
-	Changes map[string][]domain.ChangeRecord
-	CMDB    map[string]map[string]string
+	Hosts              map[string]domain.Host
+	Metrics            map[string]domain.HostMetrics
+	Alarms             map[string][]domain.Alarm
+	Changes            map[string][]domain.ChangeRecord
+	CMDB               map[string]map[string]string
+	ErrorRequestCounts []domain.ErrorRequestCountSample
 }
 
 func NewMockStore() *MockStore {
@@ -49,6 +50,18 @@ func NewMockStore() *MockStore {
 			"host-003": {"owner": "order", "service": "order-api"},
 			"host-004": {"owner": "search", "service": "search-api"},
 			"host-005": {"owner": "asset", "service": "asset-api"},
+		},
+		ErrorRequestCounts: []domain.ErrorRequestCountSample{
+			{Timestamp: now.Add(-23 * time.Hour), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 12},
+			{Timestamp: now.Add(-22 * time.Hour), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 18},
+			{Timestamp: now.Add(-21 * time.Hour), DeviceModel: "iphone-15", IDC: "beijing-a", ErrorCode: "E500", Count: 7},
+			{Timestamp: now.Add(-20 * time.Hour), DeviceModel: "iphone-14", IDC: "shanghai-a", ErrorCode: "E500", Count: 5},
+			{Timestamp: now.Add(-18 * time.Hour), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E_TIMEOUT", Count: 9},
+			{Timestamp: now.Add(-12 * time.Hour), DeviceModel: "xiaomi-14", IDC: "shenzhen-a", ErrorCode: "E500", Count: 21},
+			{Timestamp: now.Add(-8 * time.Hour), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 30},
+			{Timestamp: now.Add(-6 * time.Hour), DeviceModel: "iphone-15", IDC: "beijing-a", ErrorCode: "E500", Count: 16},
+			{Timestamp: now.Add(-2 * time.Hour), DeviceModel: "iphone-14", IDC: "shanghai-a", ErrorCode: "E500", Count: 11},
+			{Timestamp: now.Add(-30 * time.Hour), DeviceModel: "iphone-15", IDC: "shanghai-a", ErrorCode: "E500", Count: 99},
 		},
 	}
 }

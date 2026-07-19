@@ -27,7 +27,11 @@ func (r *Registry) Register(spec Spec) error {
 	if spec.Name == "" {
 		return fmt.Errorf("skill name is required")
 	}
-	if spec.Workflow == "" {
+	spec.Executor = spec.ExecutorOrDefault()
+	if !isSupportedExecutor(spec.Executor) {
+		return fmt.Errorf("skill %q unsupported executor %q", spec.Name, spec.Executor)
+	}
+	if spec.Executor == ExecutorWorkflow && spec.Workflow == "" {
 		return fmt.Errorf("skill %q workflow is required", spec.Name)
 	}
 	if _, exists := r.byName[spec.Name]; exists {
@@ -44,6 +48,15 @@ func (r *Registry) Register(spec Spec) error {
 		r.byIntent[intent] = spec.Name
 	}
 	return nil
+}
+
+func isSupportedExecutor(executor string) bool {
+	switch executor {
+	case ExecutorWorkflow, ExecutorToolLoop, ExecutorGuidedSteps, ExecutorSubAgent:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Registry) Get(name string) (Spec, bool) {
@@ -95,6 +108,29 @@ func (r *Registry) ValidateTools(hasTool func(string) bool) error {
 		for _, toolName := range spec.Tools {
 			if !hasTool(toolName) {
 				return fmt.Errorf("skill %q requires missing tool %q", spec.Name, toolName)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Registry) ValidateExecutionTargets(hasWorkflow func(string) bool) error {
+	if r == nil || hasWorkflow == nil {
+		return nil
+	}
+	for _, name := range r.Names() {
+		spec := r.byName[name]
+		switch spec.ExecutorOrDefault() {
+		case ExecutorWorkflow:
+			if spec.Workflow == "" {
+				return fmt.Errorf("skill %q workflow is required", spec.Name)
+			}
+			if !hasWorkflow(spec.Workflow) {
+				return fmt.Errorf("skill %q requires missing workflow %q", spec.Name, spec.Workflow)
+			}
+		case ExecutorToolLoop, ExecutorGuidedSteps:
+			if spec.Workflow != "" && !hasWorkflow(spec.Workflow) {
+				return fmt.Errorf("skill %q requires missing workflow %q", spec.Name, spec.Workflow)
 			}
 		}
 	}

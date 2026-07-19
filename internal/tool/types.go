@@ -164,6 +164,29 @@ func loggableToolInput(input any) any {
 				"end_time_ms":    v.TimeRange.EndUnixMS,
 			},
 		}
+	case QueryErrorRequestCountsInput:
+		return map[string]any{
+			"device_models": v.DeviceModels,
+			"idcs":          v.IDCs,
+			"error_code":    v.ErrorCode,
+			"aggregation": map[string]any{
+				"value": v.Aggregation.Value,
+				"unit":  v.Aggregation.Unit,
+			},
+			"time_range": map[string]any{
+				"range_id":       v.TimeRange.RangeID,
+				"source":         v.TimeRange.Source,
+				"timezone":       v.TimeRange.Timezone,
+				"interval":       v.TimeRange.Interval,
+				"duration_sec":   v.TimeRange.DurationSec,
+				"start_time":     v.TimeRange.Start.Format(time.RFC3339Nano),
+				"end_time":       v.TimeRange.End.Format(time.RFC3339Nano),
+				"start_time_sec": v.TimeRange.StartUnixSec,
+				"end_time_sec":   v.TimeRange.EndUnixSec,
+				"start_time_ms":  v.TimeRange.StartUnixMS,
+				"end_time_ms":    v.TimeRange.EndUnixMS,
+			},
+		}
 	case ResolveTimeRangeInput:
 		return map[string]any{
 			"kind":       v.Kind,
